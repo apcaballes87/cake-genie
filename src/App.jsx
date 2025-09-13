@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+// import { uploadImageToSupabase, saveImageToDatabase } from './supabase.js';
 
 // --- Helper Functions ---
 
@@ -25,7 +26,7 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showResults, setShowResults] = useState(false);
   const [isCSELoaded, setIsCSELoaded] = useState(false);
-  const [activeCakeType, setActiveCakeType] = useState('All');
+  const [isSearching, setIsSearching] = useState(false);
 
   // Image Handling & Gallery State
   const [gallery, setGallery] = useState([]); // {id, dataUrl, file}
@@ -41,7 +42,6 @@ export default function App() {
 
   // --- Constants & Config ---
   const SEARCH_ENGINE_ID = '825ca1503c1bd4d00';
-  const CAKE_TYPES = ['All', '1 Tier', '2 Tier', '3 Tier', 'Square', 'Rectangle', 'Cupcakes'];
 
   // --- Mobile Keyboard Detection ---
   useEffect(() => {
@@ -58,7 +58,7 @@ export default function App() {
     }
   }, []);
 
-  // --- Image Validation ---
+  // --- Image Validation & Upload ---
   const validateFile = (file) => {
     const MAX_SIZE_MB = 10;
     const MIN_DIMENSION = 200;
@@ -88,6 +88,30 @@ export default function App() {
     });
   };
 
+  const uploadToSupabase = async (file) => {
+    try {
+      setError(null);
+      console.log('Uploading image to Supabase...');
+      
+      // Temporary: Skip Supabase upload for now
+      throw new Error('Supabase not configured');
+      
+      // Upload image to Supabase Storage
+      // const { filePath, publicUrl } = await uploadImageToSupabase(file);
+      // console.log('Image uploaded successfully:', publicUrl);
+      
+      // Save to database
+      // const dbRecord = await saveImageToDatabase(publicUrl, file.name);
+      // console.log('Image data saved to database:', dbRecord);
+      
+      // return { publicUrl, dbRecord };
+    } catch (error) {
+      console.error('Failed to upload to Supabase:', error);
+      setError(`Upload failed: ${error.message}`);
+      throw error;
+    }
+  };
+
   // --- Handlers ---
   const processFiles = async (files) => {
     setError(null); // Clear previous errors
@@ -102,15 +126,46 @@ export default function App() {
         return;
     }
     
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    const dataUrl = await new Promise(resolve => reader.onload = e => resolve(e.target.result));
-    const newImage = { id: Date.now() + Math.random(), dataUrl, file };
+    // Show loading state while uploading
+    setIsProcessing(true);
     
-    // Replace gallery with single image
-    setGallery([newImage]);
-    setSelectedImageIndex(0);
-    setIsUploadOpen(false);
+    try {
+        // Upload to Supabase
+        const { publicUrl, dbRecord } = await uploadToSupabase(file);
+        
+        // Create local preview for UI
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        const dataUrl = await new Promise(resolve => reader.onload = e => resolve(e.target.result));
+        
+        const newImage = { 
+            id: dbRecord.id || Date.now() + Math.random(), 
+            dataUrl, 
+            file,
+            publicUrl, // Store the Supabase URL
+            dbRecord   // Store the database record
+        };
+        
+        // Replace gallery with single image
+        setGallery([newImage]);
+        setSelectedImageIndex(0);
+        setIsUploadOpen(false);
+        
+        console.log('Image processed successfully:', newImage);
+    } catch (uploadError) {
+        console.error('Upload process failed:', uploadError);
+        // Still create local preview if upload fails
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        const dataUrl = await new Promise(resolve => reader.onload = e => resolve(e.target.result));
+        const newImage = { id: Date.now() + Math.random(), dataUrl, file };
+        
+        setGallery([newImage]);
+        setSelectedImageIndex(0);
+        setIsUploadOpen(false);
+    } finally {
+        setIsProcessing(false);
+    }
   };
 
   const handleFileChange = (e) => processFiles(Array.from(e.target.files));
@@ -162,53 +217,126 @@ export default function App() {
 
   // --- Google CSE Handlers & Effects ---
   const executeCseSearch = (query) => {
-    if (!query || !query.trim() || !window.google?.search?.cse?.element) return;
+    if (!query || !query.trim()) {
+      console.log('No query provided, skipping search');
+      setIsSearching(false);
+      return;
+    }
     
-    // Add cake type to search query if not 'All'
-    const searchTerm = activeCakeType === 'All' ? query : `${query} ${activeCakeType} cake`;
+    if (!window.google?.search?.cse?.element) {
+      console.log('Google CSE not available yet');
+      setIsSearching(false);
+      return;
+    }
+    
+    console.log('Executing search for:', query);
+    setIsSearching(true);
     
     try {
-      const cseElement = window.google.search.cse.element.getElement('results') || 
-        window.google.search.cse.element.render({ 
-          div: 'google-search-container', 
-          tag: 'searchresults-only',
-          gname: 'results',
-          attributes: { searchType: 'image', disableWebSearch: true } 
-        });
-      cseElement.execute(searchTerm);
+      // Create a fresh CSE element with unique name each time
+      const uniqueName = 'results_' + Date.now();
+      const cseElement = window.google.search.cse.element.render({ 
+        div: 'google-search-container', 
+        tag: 'searchresults-only',
+        gname: uniqueName,
+        attributes: { searchType: 'image', disableWebSearch: true } 
+      });
+      
+      if (cseElement && typeof cseElement.execute === 'function') {
+        cseElement.execute(query);
+        console.log('Search executed successfully for:', query);
+        // Set searching to false after a delay to allow results to load
+        setTimeout(() => setIsSearching(false), 1000);
+      } else {
+        console.error('CSE element or execute method not available');
+        setIsSearching(false);
+      }
     } catch (err) {
-      console.error('executeCseSearch error', err);
+      console.error('executeCseSearch error:', err);
+      setIsSearching(false);
     }
   };
   
-  const handleCakeTypeChange = (cakeType) => {
-    setActiveCakeType(cakeType);
-    // Re-execute search with new cake type
+
+  const handleSearch = () => { 
     if (searchQuery.trim()) {
-      setTimeout(() => executeCseSearch(searchQuery), 100);
+      setIsCSELoaded(false); // Reset loading state
+      
+      // Clear the search container
+      const container = document.getElementById('google-search-container');
+      if (container) {
+        container.innerHTML = '';
+      }
+      
+      setShowResults(true); // This will trigger useEffect to handle the search
     }
   };
-  const handleSearch = () => { if (searchQuery.trim()) setShowResults(true); };
-  const handleKeyDown = (e) => { if (e.key === 'Enter') handleSearch(); };
+  const handleKeyDown = (e) => { 
+    // Allow standard keyboard shortcuts (Ctrl+C, Ctrl+V, Ctrl+A, etc.)
+    if (e.ctrlKey || e.metaKey) {
+      // Let the browser handle standard shortcuts like copy, paste, select all
+      return true; // Explicitly allow these events to bubble up
+    }
+    
+    // Handle Enter key for search
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleSearch();
+      return false;
+    }
+  };
   const closeResults = () => setShowResults(false);
 
   useEffect(() => {
     if (!showResults) return;
-    if (document.getElementById('google-cse-script')) {
-      executeCseSearch(searchQuery);
+    
+    // Prevent double execution
+    if (isSearching) {
+      console.log('Already searching, skipping...');
       return;
     }
-    window.__gcse = { parsetags: 'explicit', callback: () => { setIsCSELoaded(true); executeCseSearch(searchQuery); } };
-    const script = document.createElement('script');
-    script.id = 'google-cse-script';
-    script.async = true;
-    script.src = `https://cse.google.com/cse.js?cx=${SEARCH_ENGINE_ID}`;
-    document.head.appendChild(script);
+    
+    if (!searchQuery || !searchQuery.trim()) {
+      console.log('No query to search');
+      return;
+    }
+    
+    console.log('useEffect triggered for search:', searchQuery);
+    
+    // Small delay to ensure the search container is ready
+    const timeoutId = setTimeout(() => {
+      if (document.getElementById('google-cse-script')) {
+        console.log('CSE script already loaded, executing search');
+        executeCseSearch(searchQuery);
+        return;
+      }
+      
+      console.log('Initializing Google CSE...');
+      // Initialize Google CSE if not already loaded
+      window.__gcse = { 
+        parsetags: 'explicit', 
+        callback: () => { 
+          console.log('Google CSE loaded successfully');
+          setIsCSELoaded(true); 
+          executeCseSearch(searchQuery); 
+        } 
+      };
+      
+      
+      const script = document.createElement('script');
+      script.id = 'google-cse-script';
+      script.async = true;
+      script.src = `https://cse.google.com/cse.js?cx=${SEARCH_ENGINE_ID}`;
+      script.onload = () => {
+        console.log('CSE script loaded');
+      };
+      document.head.appendChild(script);
+    }, 200);
+    
     return () => {
-      const cseScript = document.getElementById('google-cse-script');
-      if (cseScript) cseScript.parentNode.removeChild(cseScript);
+      clearTimeout(timeoutId);
     };
-  }, [showResults, searchQuery, activeCakeType]);
+  }, [showResults, searchQuery]);
 
   useEffect(() => {
     if (!showResults) return;
@@ -273,52 +401,110 @@ export default function App() {
                           <div 
                             onDragOver={handleDragOver} 
                             onDrop={handleDrop} 
-                            onClick={() => document.getElementById('fileInput').click()} 
-                            className="border-2 border-dashed border-gray-300 rounded-xl p-8 sm:p-12 text-center cursor-pointer hover:border-purple-400 hover:bg-purple-50 transition-all duration-300 touch-target"
+                            onClick={() => !isProcessing && document.getElementById('fileInput').click()} 
+                            className={`border-2 border-dashed border-gray-300 rounded-xl p-8 sm:p-12 text-center cursor-pointer hover:border-purple-400 hover:bg-purple-50 transition-all duration-300 touch-target ${
+                              isProcessing ? 'opacity-50 cursor-not-allowed' : ''
+                            }`}
                           >
-                              <div className="mb-4">
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mx-auto text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                                </svg>
-                              </div>
-                              <p className="text-gray-700 font-medium text-sm sm:text-base">
-                                Drag an image here, paste, or <span className="text-blue-600 font-semibold">tap to upload</span>
-                              </p>
+                              {isProcessing ? (
+                                <div className="mb-4">
+                                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500 mx-auto mb-4"></div>
+                                  <p className="text-purple-700 font-medium text-sm sm:text-base">
+                                    Uploading to Supabase...
+                                  </p>
+                                </div>
+                              ) : (
+                                <>
+                                  <div className="mb-4">
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mx-auto text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                                    </svg>
+                                  </div>
+                                  <p className="text-gray-700 font-medium text-sm sm:text-base">
+                                    Drag an image here, paste, or <span className="text-blue-600 font-semibold">tap to upload</span>
+                                  </p>
+                                  <p className="text-gray-500 text-xs sm:text-sm mt-2">
+                                    Will be uploaded to Supabase storage
+                                  </p>
+                                </>
+                              )}
                           </div>
-                          <input id="fileInput" type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
+                          <input id="fileInput" type="file" accept="image/*" onChange={handleFileChange} className="hidden" disabled={isProcessing} />
                       </div>
                    </div>
                ) : (
-                  // Search View
-                  <div className="bg-white rounded-full shadow-xl p-1 sm:p-2 flex items-center border border-gray-200 hover:shadow-2xl transition-shadow duration-300">
-                      <input 
-                        type="text" 
-                        value={searchQuery} 
-                        onChange={(e) => setSearchQuery(e.target.value)} 
-                        onKeyDown={handleKeyDown} 
-                        placeholder="Search for cake designs..." 
-                        className="flex-grow px-4 sm:px-6 py-3 sm:py-4 text-base sm:text-lg outline-none rounded-full bg-transparent" 
-                        onPaste={handlePaste}
-                      />
-                      <button 
-                        onClick={handleSearch} 
-                        className="touch-target p-2 sm:p-3 rounded-full bg-gradient-to-r from-pink-500 to-purple-500 text-white hover:opacity-90 transition-opacity duration-200 mx-1 sm:mx-2" 
-                        aria-label="Search"
-                      >
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 sm:h-6 sm:w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                          </svg>
-                      </button>
-                      <div className="w-px h-6 sm:h-8 bg-gray-200"></div>
+                  // Search View - Mobile-First Responsive Layout
+                  <div className="w-full">
+                    {/* Mobile Layout (stacked) */}
+                    <div className="md:hidden space-y-3">
+                      {/* Search bar gets its own row */}
+                      <div className="bg-white rounded-2xl shadow-xl p-2 border border-gray-200 hover:shadow-2xl transition-shadow duration-300">
+                        <div className="flex items-center">
+                          <input 
+                            type="text" 
+                            value={searchQuery} 
+                            onChange={(e) => setSearchQuery(e.target.value)} 
+                            onKeyDown={handleKeyDown} 
+                            placeholder="Search for cake designs..." 
+                            className="flex-grow px-4 py-4 text-base outline-none rounded-xl bg-transparent" 
+                            onPaste={handlePaste}
+                          />
+                          <button 
+                            onClick={handleSearch} 
+                            className="p-3 rounded-xl bg-gradient-to-r from-pink-500 to-purple-500 text-white hover:opacity-90 transition-opacity duration-200 ml-2 min-w-[44px] min-h-[44px] flex items-center justify-center" 
+                            aria-label="Search"
+                          >
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                              </svg>
+                          </button>
+                        </div>
+                      </div>
+                      
+                      {/* Upload button is separate, full-width */}
                       <button 
                         onClick={() => setIsUploadOpen(true)} 
-                        className="touch-target p-2 sm:p-3 rounded-full hover:bg-gray-100 cursor-pointer transition-colors duration-200 ml-1 sm:ml-2" 
+                        className="w-full bg-white rounded-2xl shadow-lg border border-gray-200 hover:shadow-xl transition-all duration-300 p-4 flex items-center justify-center space-x-3 min-h-[56px]" 
                         aria-label="Upload Image"
                       >
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 sm:h-6 sm:w-6 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                           </svg>
+                          <span className="text-gray-700 font-medium">Upload a cake image</span>
                       </button>
+                    </div>
+                    
+                    {/* Desktop Layout (original horizontal) */}
+                    <div className="hidden md:flex bg-white rounded-full shadow-xl p-1 sm:p-2 items-center border border-gray-200 hover:shadow-2xl transition-shadow duration-300">
+                        <input 
+                          type="text" 
+                          value={searchQuery} 
+                          onChange={(e) => setSearchQuery(e.target.value)} 
+                          onKeyDown={handleKeyDown} 
+                          placeholder="Search for cake designs..." 
+                          className="flex-grow px-4 sm:px-6 py-3 sm:py-4 text-base sm:text-lg outline-none rounded-full bg-transparent" 
+                          onPaste={handlePaste}
+                        />
+                        <button 
+                          onClick={handleSearch} 
+                          className="touch-target p-2 sm:p-3 rounded-full bg-gradient-to-r from-pink-500 to-purple-500 text-white hover:opacity-90 transition-opacity duration-200 mx-1 sm:mx-2" 
+                          aria-label="Search"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 sm:h-6 sm:w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                            </svg>
+                        </button>
+                        <div className="w-px h-6 sm:h-8 bg-gray-200"></div>
+                        <button 
+                          onClick={() => setIsUploadOpen(true)} 
+                          className="touch-target p-2 sm:p-3 rounded-full hover:bg-gray-100 cursor-pointer transition-colors duration-200 ml-1 sm:ml-2" 
+                          aria-label="Upload Image"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 sm:h-6 sm:w-6 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                        </button>
+                    </div>
                   </div>
                )}
             </div>
@@ -327,7 +513,15 @@ export default function App() {
           {/* === Gallery & Pricing View === */}
           {gallery.length > 0 && !showResults && (
               <div className="mt-8 p-6 bg-white rounded-xl shadow-lg w-full max-w-2xl text-center animate-fade-in">
-                  <h3 className="text-lg sm:text-xl font-semibold mb-4">Your Cake Design</h3>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg sm:text-xl font-semibold">Your Cake Design</h3>
+                    {gallery[selectedImageIndex].publicUrl && (
+                      <div className="flex items-center space-x-2 bg-green-100 px-3 py-1 rounded-full">
+                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                        <span className="text-green-700 text-xs font-medium">Uploaded to Supabase</span>
+                      </div>
+                    )}
+                  </div>
                   
                   {/* Main Image */}
                   <img 
@@ -378,68 +572,89 @@ export default function App() {
           {/* === Search Results View === */}
           {showResults && (
             <div className="w-full max-w-6xl mx-auto animate-fade-in">
-              {/* Search Bar - Fixed at Top */}
-              <div className="bg-white rounded-full shadow-xl p-1 sm:p-2 flex items-center border border-gray-200 hover:shadow-2xl transition-shadow duration-300 mb-6">
-                  <input 
-                    type="text" 
-                    value={searchQuery} 
-                    onChange={(e) => setSearchQuery(e.target.value)} 
-                    onKeyDown={handleKeyDown} 
-                    placeholder="Search for cake designs..." 
-                    className="flex-grow px-4 sm:px-6 py-3 sm:py-4 text-base sm:text-lg outline-none rounded-full bg-transparent" 
-                    onPaste={handlePaste}
-                  />
-                  <button 
-                    onClick={handleSearch} 
-                    className="touch-target p-2 sm:p-3 rounded-full bg-gradient-to-r from-pink-500 to-purple-500 text-white hover:opacity-90 transition-opacity duration-200 mx-1 sm:mx-2" 
-                    aria-label="Search"
-                  >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 sm:h-6 sm:w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                      </svg>
-                  </button>
-                  <div className="w-px h-6 sm:h-8 bg-gray-200"></div>
-                  <button 
-                    onClick={closeResults} 
-                    className="touch-target p-2 sm:p-3 rounded-full hover:bg-gray-100 cursor-pointer transition-colors duration-200 ml-1 sm:ml-2" 
-                    aria-label="Close Search"
-                  >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 sm:h-6 sm:w-6 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                  </button>
+              {/* Search Bar - Responsive Layout */}
+              <div className="mb-6">
+                {/* Mobile Compact Search Bar */}
+                <div className="md:hidden bg-white rounded-2xl shadow-lg p-2 border border-gray-200">
+                  <div className="flex items-center">
+                    <input 
+                      type="text" 
+                      value={searchQuery} 
+                      onChange={(e) => setSearchQuery(e.target.value)} 
+                      onKeyDown={handleKeyDown} 
+                      placeholder="Search for cake designs..." 
+                      className="flex-grow px-3 py-3 text-base outline-none rounded-xl bg-transparent" 
+                      onPaste={handlePaste}
+                    />
+                    <button 
+                      onClick={handleSearch} 
+                      className="p-2 rounded-lg bg-gradient-to-r from-pink-500 to-purple-500 text-white hover:opacity-90 transition-opacity duration-200 ml-2 min-w-[40px] min-h-[40px] flex items-center justify-center" 
+                      aria-label="Search"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                    </button>
+                    <button 
+                      onClick={closeResults} 
+                      className="p-2 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors duration-200 ml-1 min-w-[40px] min-h-[40px] flex items-center justify-center" 
+                      aria-label="Close Search"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                  </div>
+                </div>
+                
+                {/* Desktop Search Bar */}
+                <div className="hidden md:flex bg-white rounded-full shadow-xl p-1 sm:p-2 items-center border border-gray-200 hover:shadow-2xl transition-shadow duration-300">
+                    <input 
+                      type="text" 
+                      value={searchQuery} 
+                      onChange={(e) => setSearchQuery(e.target.value)} 
+                      onKeyDown={handleKeyDown} 
+                      placeholder="Search for cake designs..." 
+                      className="flex-grow px-4 sm:px-6 py-3 sm:py-4 text-base sm:text-lg outline-none rounded-full bg-transparent" 
+                      onPaste={handlePaste}
+                    />
+                    <button 
+                      onClick={handleSearch} 
+                      className="touch-target p-2 sm:p-3 rounded-full bg-gradient-to-r from-pink-500 to-purple-500 text-white hover:opacity-90 transition-opacity duration-200 mx-1 sm:mx-2" 
+                      aria-label="Search"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 sm:h-6 sm:w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                    </button>
+                    <div className="w-px h-6 sm:h-8 bg-gray-200"></div>
+                    <button 
+                      onClick={closeResults} 
+                      className="touch-target p-2 sm:p-3 rounded-full hover:bg-gray-100 cursor-pointer transition-colors duration-200 ml-1 sm:ml-2" 
+                      aria-label="Close Search"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 sm:h-6 sm:w-6 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
               </div>
               
               {/* Results Container */}
               <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 p-4 sm:p-6">
                 <div className="mb-4 sm:mb-6">
                   <h3 className="text-base sm:text-lg font-semibold text-gray-700 mb-4">
-                    Search results for: <span className="text-purple-600">"{searchQuery}"</span>
+                    Search results for: <span className="text-purple-600">
+                      "{searchQuery}"
+                    </span>
                   </h3>
-                  
-                  {/* Cake Type Tabs */}
-                  <div className="flex flex-wrap gap-2 mb-4">
-                    {CAKE_TYPES.map((cakeType) => (
-                      <button
-                        key={cakeType}
-                        onClick={() => handleCakeTypeChange(cakeType)}
-                        className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
-                          activeCakeType === cakeType
-                            ? 'bg-gradient-to-r from-pink-500 to-purple-500 text-white shadow-lg'
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        {cakeType}
-                      </button>
-                    ))}
-                  </div>
                 </div>
                 
                 <div id="google-search-container" className="min-h-[300px] sm:min-h-[400px]"></div>
-                {!isCSELoaded && (
+                {(!isCSELoaded || isSearching) && (
                   <div className="text-center py-8 text-gray-500">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-pink-500 mx-auto mb-4"></div>
-                    <p className="text-sm sm:text-base">Loading search results...</p>
+                    <p className="text-sm sm:text-base">{isSearching ? 'Searching...' : 'Loading search results...'}</p>
                   </div>
                 )}
               </div>
