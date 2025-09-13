@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useState, useEffect } from 'react';
 import { uploadImageToSupabase, saveImageToDatabase } from './supabase.js';
+import { compressAndOptimizeImage, formatFileSize } from './utils/imageCompression.js';
+import { ProcessingIndicator } from './components/ProgressBar.jsx';
 
 // --- Helper Functions ---
 
@@ -34,9 +35,10 @@ export default function App() {
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [error, setError] = useState(null);
 
-  // API & Pricing State
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [priceResult, setPriceResult] = useState(null);
+  // Processing state for better user feedback
+  const [processingState, setProcessingState] = useState('idle'); // idle, uploading, processing, complete, error
+  const [processingMessage, setProcessingMessage] = useState('');
+  const [compressionInfo, setCompressionInfo] = useState(null);
 
   // Mobile-specific state
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
@@ -113,6 +115,7 @@ export default function App() {
   // --- Handlers ---
   const processFiles = async (files) => {
     setError(null); // Clear previous errors
+    setCompressionInfo(null);
     
     // Limit to only one image
     const file = files[0];
@@ -124,24 +127,43 @@ export default function App() {
         return;
     }
     
-    // Show loading state while uploading
-    setIsProcessing(true);
-    
     try {
-        // Upload to Supabase
-        const { publicUrl, dbRecord } = await uploadToSupabase(file);
+        // Step 1: Compress image
+        setProcessingState('uploading');
+        setProcessingMessage('Optimizing image...');
         
-        // Create local preview for UI
+        const compressionResult = await compressAndOptimizeImage(file);
+        setCompressionInfo({
+            originalSize: compressionResult.originalSize || file.size,
+            compressedSize: compressionResult.blob.size,
+            ratio: compressionResult.compressionRatio || 1,
+            dimensions: compressionResult.dimensions
+        });
+        
+        console.log('Image compression complete:', {
+            originalSize: formatFileSize(compressionResult.originalSize || file.size),
+            compressedSize: formatFileSize(compressionResult.blob.size),
+            ratio: `${(compressionResult.compressionRatio || 1).toFixed(1)}x`
+        });
+        
+        // Step 2: Upload to Supabase
+        setProcessingMessage('Uploading to cloud storage...');
+        const { publicUrl, dbRecord } = await uploadToSupabase(compressionResult.blob);
+        
+        // Step 3: Create local preview for UI
+        setProcessingMessage('Finalizing...');
         const reader = new FileReader();
-        reader.readAsDataURL(file);
+        reader.readAsDataURL(compressionResult.blob);
         const dataUrl = await new Promise(resolve => reader.onload = e => resolve(e.target.result));
         
         const newImage = { 
             id: dbRecord.id || Date.now() + Math.random(), 
             dataUrl, 
-            file,
+            file: compressionResult.blob, // Use compressed version
+            originalFile: file, // Keep reference to original
             publicUrl, // Store the Supabase URL
-            dbRecord   // Store the database record
+            dbRecord,   // Store the database record
+            compressionInfo: compressionResult
         };
         
         // Replace gallery with single image
@@ -149,20 +171,49 @@ export default function App() {
         setSelectedImageIndex(0);
         setIsUploadOpen(false);
         
+        // Step 4: Start AI processing
+        setProcessingState('processing');
+        setProcessingMessage('AI is analyzing your cake design...');
+        
+        // Simulate AI processing time (in real app, this would be actual AI analysis)
+        setTimeout(() => {
+            setProcessingState('complete');
+            setProcessingMessage('Analysis complete! Your cake has been processed.');
+            
+            // Clear processing state after showing success
+            setTimeout(() => {
+                setProcessingState('idle');
+                setProcessingMessage('');
+            }, 3000);
+        }, 5000);
+        
         console.log('Image processed successfully:', newImage);
+        
     } catch (uploadError) {
         console.error('Upload process failed:', uploadError);
-        // Still create local preview if upload fails
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        const dataUrl = await new Promise(resolve => reader.onload = e => resolve(e.target.result));
-        const newImage = { id: Date.now() + Math.random(), dataUrl, file };
+        setProcessingState('error');
+        setProcessingMessage('Upload failed. Please try again.');
         
-        setGallery([newImage]);
-        setSelectedImageIndex(0);
-        setIsUploadOpen(false);
-    } finally {
-        setIsProcessing(false);
+        // Still create local preview if upload fails
+        try {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            const dataUrl = await new Promise(resolve => reader.onload = e => resolve(e.target.result));
+            const newImage = { id: Date.now() + Math.random(), dataUrl, file };
+            
+            setGallery([newImage]);
+            setSelectedImageIndex(0);
+            setIsUploadOpen(false);
+        } catch (previewError) {
+            console.error('Failed to create preview:', previewError);
+            setError('Failed to process image. Please try again.');
+        }
+        
+        // Clear error state after 5 seconds
+        setTimeout(() => {
+            setProcessingState('idle');
+            setProcessingMessage('');
+        }, 5000);
     }
   };
 
