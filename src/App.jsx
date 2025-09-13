@@ -25,6 +25,7 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showResults, setShowResults] = useState(false);
   const [isCSELoaded, setIsCSELoaded] = useState(false);
+  const [activeCakeType, setActiveCakeType] = useState('All');
 
   // Image Handling & Gallery State
   const [gallery, setGallery] = useState([]); // {id, dataUrl, file}
@@ -40,6 +41,7 @@ export default function App() {
 
   // --- Constants & Config ---
   const SEARCH_ENGINE_ID = '825ca1503c1bd4d00';
+  const CAKE_TYPES = ['All', '1 Tier', '2 Tier', '3 Tier', 'Square', 'Rectangle', 'Cupcakes'];
 
   // --- Mobile Keyboard Detection ---
   useEffect(() => {
@@ -161,6 +163,10 @@ export default function App() {
   // --- Google CSE Handlers & Effects ---
   const executeCseSearch = (query) => {
     if (!query || !query.trim() || !window.google?.search?.cse?.element) return;
+    
+    // Add cake type to search query if not 'All'
+    const searchTerm = activeCakeType === 'All' ? query : `${query} ${activeCakeType} cake`;
+    
     try {
       const cseElement = window.google.search.cse.element.getElement('results') || 
         window.google.search.cse.element.render({ 
@@ -169,9 +175,17 @@ export default function App() {
           gname: 'results',
           attributes: { searchType: 'image', disableWebSearch: true } 
         });
-      cseElement.execute(query);
+      cseElement.execute(searchTerm);
     } catch (err) {
       console.error('executeCseSearch error', err);
+    }
+  };
+  
+  const handleCakeTypeChange = (cakeType) => {
+    setActiveCakeType(cakeType);
+    // Re-execute search with new cake type
+    if (searchQuery.trim()) {
+      setTimeout(() => executeCseSearch(searchQuery), 100);
     }
   };
   const handleSearch = () => { if (searchQuery.trim()) setShowResults(true); };
@@ -194,7 +208,7 @@ export default function App() {
       const cseScript = document.getElementById('google-cse-script');
       if (cseScript) cseScript.parentNode.removeChild(cseScript);
     };
-  }, [showResults, searchQuery]);
+  }, [showResults, searchQuery, activeCakeType]);
 
   useEffect(() => {
     if (!showResults) return;
@@ -364,21 +378,63 @@ export default function App() {
           {/* === Search Results View === */}
           {showResults && (
             <div className="w-full max-w-6xl mx-auto animate-fade-in">
-              <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 p-4 sm:p-6">
-                <div className="flex justify-between items-center mb-4 sm:mb-6">
-                  <h3 className="text-base sm:text-lg font-semibold text-gray-700">
-                    Search results for: <span className="text-purple-600">"{searchQuery}"</span>
-                  </h3>
+              {/* Search Bar - Fixed at Top */}
+              <div className="bg-white rounded-full shadow-xl p-1 sm:p-2 flex items-center border border-gray-200 hover:shadow-2xl transition-shadow duration-300 mb-6">
+                  <input 
+                    type="text" 
+                    value={searchQuery} 
+                    onChange={(e) => setSearchQuery(e.target.value)} 
+                    onKeyDown={handleKeyDown} 
+                    placeholder="Search for cake designs..." 
+                    className="flex-grow px-4 sm:px-6 py-3 sm:py-4 text-base sm:text-lg outline-none rounded-full bg-transparent" 
+                    onPaste={handlePaste}
+                  />
+                  <button 
+                    onClick={handleSearch} 
+                    className="touch-target p-2 sm:p-3 rounded-full bg-gradient-to-r from-pink-500 to-purple-500 text-white hover:opacity-90 transition-opacity duration-200 mx-1 sm:mx-2" 
+                    aria-label="Search"
+                  >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 sm:h-6 sm:w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      </svg>
+                  </button>
+                  <div className="w-px h-6 sm:h-8 bg-gray-200"></div>
                   <button 
                     onClick={closeResults} 
-                    className="touch-target p-2 text-gray-500 hover:text-gray-700 rounded-full hover:bg-gray-100 transition-colors" 
-                    aria-label="Close"
+                    className="touch-target p-2 sm:p-3 rounded-full hover:bg-gray-100 cursor-pointer transition-colors duration-200 ml-1 sm:ml-2" 
+                    aria-label="Close Search"
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 sm:h-6 sm:w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 sm:h-6 sm:w-6 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
                   </button>
+              </div>
+              
+              {/* Results Container */}
+              <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 p-4 sm:p-6">
+                <div className="mb-4 sm:mb-6">
+                  <h3 className="text-base sm:text-lg font-semibold text-gray-700 mb-4">
+                    Search results for: <span className="text-purple-600">"{searchQuery}"</span>
+                  </h3>
+                  
+                  {/* Cake Type Tabs */}
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    {CAKE_TYPES.map((cakeType) => (
+                      <button
+                        key={cakeType}
+                        onClick={() => handleCakeTypeChange(cakeType)}
+                        className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
+                          activeCakeType === cakeType
+                            ? 'bg-gradient-to-r from-pink-500 to-purple-500 text-white shadow-lg'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
+                      >
+                        {cakeType}
+                      </button>
+                    ))}
+                  </div>
                 </div>
+                
                 <div id="google-search-container" className="min-h-[300px] sm:min-h-[400px]"></div>
                 {!isCSELoaded && (
                   <div className="text-center py-8 text-gray-500">
