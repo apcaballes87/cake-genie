@@ -70,9 +70,12 @@ export async function compressAndOptimizeImage(file) {
   try {
     // Skip compression for non-images or GIFs
     if (!file.type.startsWith('image/')) {
+      const fileName = file.name || 'unknown';
+      const ext = fileName && typeof fileName === 'string' ? 
+        (fileName.split('.').pop() || 'bin').toLowerCase() : 'bin';
       return { 
         blob: file, 
-        ext: (file.name.split('.').pop() || 'bin').toLowerCase(),
+        ext: ext,
         compressionRatio: 1 
       };
     }
@@ -93,9 +96,12 @@ export async function compressAndOptimizeImage(file) {
 
     // If already small enough, return original
     if (longEdge <= IMAGE_CONFIG.MAX_LONG_EDGE && file.size <= IMAGE_CONFIG.TARGET_MAX_BYTES) {
+      const fileName = file.name || 'image.jpg';
+      const ext = fileName && typeof fileName === 'string' ? 
+        (fileName.split('.').pop() || 'jpg').toLowerCase() : 'jpg';
       return { 
         blob: file, 
-        ext: (file.name.split('.').pop() || 'jpg').toLowerCase(),
+        ext: ext,
         compressionRatio: 1 
       };
     }
@@ -144,9 +150,12 @@ export async function compressAndOptimizeImage(file) {
     
   } catch (error) {
     console.warn('Image compression failed, using original:', error);
+    const fileName = file.name || 'image.jpg';
+    const ext = fileName && typeof fileName === 'string' ? 
+      (fileName.split('.').pop() || 'jpg').toLowerCase() : 'jpg';
     return { 
       blob: file, 
-      ext: (file.name.split('.').pop() || 'jpg').toLowerCase(),
+      ext: ext,
       compressionRatio: 1,
       error: error.message 
     };

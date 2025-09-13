@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { uploadImageToSupabase, saveImageToDatabase } from './supabase.js';
+import { uploadImageToSupabase, saveImageToDatabase, fetchPricingData } from './supabase.js';
 import { compressAndOptimizeImage, formatFileSize } from './utils/imageCompression.js';
 import { ProcessingIndicator } from './components/ProgressBar.jsx';
 
@@ -39,9 +39,18 @@ export default function App() {
   const [processingState, setProcessingState] = useState('idle'); // idle, uploading, processing, complete, error
   const [processingMessage, setProcessingMessage] = useState('');
   const [compressionInfo, setCompressionInfo] = useState(null);
+  
+  // Pricing state (simplified)
+  const [priceResult, setPriceResult] = useState(null);
 
   // Mobile-specific state
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
+  
+  // Race condition prevention
+  const pendingSearchQuery = useRef(null);
+  const searchAbortController = useRef(null);
+  const uploadAbortController = useRef(null);
+  const isProcessingUpload = useRef(false);
 
   // --- Constants & Config ---
   const SEARCH_ENGINE_ID = '825ca1503c1bd4d00';
@@ -107,32 +116,77 @@ export default function App() {
       return { publicUrl, dbRecord };
     } catch (error) {
       console.error('Failed to upload to Supabase:', error);
-      setError(`Upload failed: ${error.message}`);
-      throw error;
+      
+      // Enhanced error handling with specific error types
+      let userFriendlyMessage = 'Upload failed. Please try again.';
+      
+      if (error.message.includes('not configured')) {
+        userFriendlyMessage = 'Service configuration error. Please check your settings and try again.';
+      } else if (error.message.includes('storage')) {
+        userFriendlyMessage = 'File storage error. Please check your connection and try again.';
+      } else if (error.message.includes('database')) {
+        userFriendlyMessage = 'Database error. Please try again in a few moments.';
+      } else if (error.message.includes('network') || error.code === 'NETWORK_ERROR') {
+        userFriendlyMessage = 'Network error. Please check your internet connection and try again.';
+      }
+      
+      setError(userFriendlyMessage);
+      throw new Error(userFriendlyMessage);
     }
   };
 
   // --- Handlers ---
   const processFiles = async (files) => {
+    // Prevent concurrent uploads
+    if (isProcessingUpload.current) {
+      console.log('Upload already in progress, ignoring...');
+      return;
+    }
+    
+    isProcessingUpload.current = true;
+    
+    // Cancel any previous upload
+    if (uploadAbortController.current) {
+      uploadAbortController.current.abort();
+    }
+    uploadAbortController.current = new AbortController();
+    
     setError(null); // Clear previous errors
     setCompressionInfo(null);
     
     // Limit to only one image
     const file = files[0];
-    if (!file) return;
+    if (!file) {
+      isProcessingUpload.current = false;
+      return;
+    }
     
     const validationError = await validateFile(file);
     if (validationError) {
         setError(validationError);
+        isProcessingUpload.current = false;
         return;
     }
     
     try {
+        // Check if operation was cancelled
+        if (uploadAbortController.current.signal.aborted) {
+          isProcessingUpload.current = false;
+          return;
+        }
+        
         // Step 1: Compress image
         setProcessingState('uploading');
         setProcessingMessage('Optimizing image...');
         
         const compressionResult = await compressAndOptimizeImage(file);
+        
+        // Check if operation was cancelled after compression
+        if (uploadAbortController.current.signal.aborted) {
+          isProcessingUpload.current = false;
+          return;
+        }
+        
         setCompressionInfo({
             originalSize: compressionResult.originalSize || file.size,
             compressedSize: compressionResult.blob.size,
@@ -149,6 +203,12 @@ export default function App() {
         // Step 2: Upload to Supabase
         setProcessingMessage('Uploading to cloud storage...');
         const { publicUrl, dbRecord } = await uploadToSupabase(compressionResult.blob);
+        
+        // Check if operation was cancelled after upload
+        if (uploadAbortController.current.signal.aborted) {
+          isProcessingUpload.current = false;
+          return;
+        }
         
         // Step 3: Create local preview for UI
         setProcessingMessage('Finalizing...');
@@ -171,49 +231,42 @@ export default function App() {
         setSelectedImageIndex(0);
         setIsUploadOpen(false);
         
-        // Step 4: Start AI processing
-        setProcessingState('processing');
-        setProcessingMessage('AI is analyzing your cake design...');
-        
-        // Simulate AI processing time (in real app, this would be actual AI analysis)
-        setTimeout(() => {
-            setProcessingState('complete');
-            setProcessingMessage('Analysis complete! Your cake has been processed.');
-            
-            // Clear processing state after showing success
-            setTimeout(() => {
-                setProcessingState('idle');
-                setProcessingMessage('');
-            }, 3000);
-        }, 5000);
+        // Upload complete - set state to idle
+        setProcessingState('idle');
+        setProcessingMessage('');
         
         console.log('Image processed successfully:', newImage);
         
     } catch (uploadError) {
         console.error('Upload process failed:', uploadError);
-        setProcessingState('error');
-        setProcessingMessage('Upload failed. Please try again.');
-        
-        // Still create local preview if upload fails
-        try {
-            const reader = new FileReader();
-            reader.readAsDataURL(file);
-            const dataUrl = await new Promise(resolve => reader.onload = e => resolve(e.target.result));
-            const newImage = { id: Date.now() + Math.random(), dataUrl, file };
-            
-            setGallery([newImage]);
-            setSelectedImageIndex(0);
-            setIsUploadOpen(false);
-        } catch (previewError) {
-            console.error('Failed to create preview:', previewError);
-            setError('Failed to process image. Please try again.');
+        if (!uploadAbortController.current.signal.aborted) {
+          setProcessingState('error');
+          setProcessingMessage('Upload failed. Please try again.');
+          
+          // Still create local preview if upload fails
+          try {
+              const reader = new FileReader();
+              reader.readAsDataURL(file);
+              const dataUrl = await new Promise(resolve => reader.onload = e => resolve(e.target.result));
+              const newImage = { id: Date.now() + Math.random(), dataUrl, file };
+              
+              setGallery([newImage]);
+              setSelectedImageIndex(0);
+              setIsUploadOpen(false);
+          } catch (previewError) {
+              console.error('Failed to create preview:', previewError);
+              setError('Failed to process image. Please try again.');
+          }
+          
+          // Clear error state after 5 seconds
+          setTimeout(() => {
+              setProcessingState('idle');
+              setProcessingMessage('');
+          }, 5000);
         }
-        
-        // Clear error state after 5 seconds
-        setTimeout(() => {
-            setProcessingState('idle');
-            setProcessingMessage('');
-        }, 5000);
+    } finally {
+        isProcessingUpload.current = false;
+        uploadAbortController.current = null;
     }
   };
 
@@ -229,43 +282,196 @@ export default function App() {
   };
   const handleDragOver = (e) => e.preventDefault();
   
-  // --- Pricing Logic (Mock) ---
+  // --- Fixed Pricing Logic with Real Polling ---
   const handleCalculatePrice = async () => {
       if (gallery.length === 0) return;
       
-      setIsProcessing(true);
+      setProcessingState('processing');
+      setProcessingMessage('Uploading image to Supabase...');
       setError(null);
       setPriceResult(null);
 
-      // In a real app, you would upload to Supabase/S3 and then call your API.
-      // For this example, we'll simulate an API call.
       try {
-          // const publicUrl = await uploadImageToSupabase(gallery[selectedImageIndex].file);
-          // const response = await fetch('/api/price-by-url', { ... });
+          const selectedImage = gallery[selectedImageIndex];
+          let publicUrl, dbRecord;
           
-          // --- MOCK API CALL ---
-          await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate network latency
-          const mockPrice = (Math.random() * 100 + 50).toFixed(2);
+          // Check if image is already uploaded to Supabase
+          if (selectedImage.publicUrl && selectedImage.dbRecord) {
+              console.log('✅ Using existing Supabase data');
+              publicUrl = selectedImage.publicUrl;
+              dbRecord = selectedImage.dbRecord;
+          } else {
+              console.log('⬆️ Uploading image to Supabase...');
+              const uploadResult = await uploadToSupabase(selectedImage.file);
+              publicUrl = uploadResult.publicUrl;
+              dbRecord = uploadResult.dbRecord;
+              
+              // Update the gallery item with Supabase data
+              const updatedGallery = [...gallery];
+              updatedGallery[selectedImageIndex] = {
+                  ...selectedImage,
+                  publicUrl,
+                  dbRecord
+              };
+              setGallery(updatedGallery);
+          }
+          
+          console.log('📊 Database record created:', dbRecord);
+          setProcessingMessage('AI is analyzing your cake design...');
+          
+          // Show initial processing state
           setPriceResult({
-              price: `$${mockPrice}`,
-              breakdown: [
-                  `Base Cake: $${(mockPrice * 0.4).toFixed(2)}`,
-                  `Fondant/Icing: $${(mockPrice * 0.3).toFixed(2)}`,
-                  `Complexity: $${(mockPrice * 0.3).toFixed(2)}`,
-              ]
+              priceAddon: 'Processing...',
+              cakeDesignDetails: 'AI is analyzing your design...',
+              cakeType: 'Determining...',
+              height: 'Calculating...',
+              rowId: dbRecord.rowid,
+              supabaseUrl: publicUrl,
+              hasRealData: false
           });
-          // --- END MOCK ---
+          
+          // Fixed polling logic
+          let attempts = 0;
+          const maxAttempts = 8; // 8 attempts * 5 seconds = 40 seconds
+          
+          const pollForData = async () => {
+              try {
+                  attempts++;
+                  console.log(`🔍 Polling attempt ${attempts}/${maxAttempts}`);
+                  
+                  const data = await fetchPricingData(dbRecord.rowid);
+                  console.log('📊 Polled data:', data);
+                  
+                  if (data && data.priceaddon !== null && data.priceaddon !== undefined) {
+                      // Found pricing data!
+                      console.log('✅ Pricing data found:', data.priceaddon);
+                      setPriceResult({
+                          priceAddon: `+₱${data.priceaddon}`,
+                          cakeDesignDetails: data.infoaddon || 'Design analyzed',
+                          cakeType: data.type || 'Custom',
+                          height: data.thickness || 'Standard',
+                          rowId: data.rowid,
+                          supabaseUrl: publicUrl,
+                          hasRealData: true
+                      });
+                      setProcessingState('complete');
+                      setProcessingMessage('Analysis complete!');
+                      console.log('✅ Real data loaded successfully');
+                      return; // Stop polling
+                  }
+                  
+                  // Continue polling if we haven't reached max attempts
+                  if (attempts < maxAttempts) {
+                      console.log(`⏰ Scheduling next poll in 5 seconds (attempt ${attempts + 1}/${maxAttempts})`);
+                      setTimeout(pollForData, 5000);
+                  } else {
+                      // Max attempts reached, show refresh option
+                      console.log('⚠️ Max polling attempts reached');
+                      setPriceResult(prevResult => ({
+                          ...prevResult,
+                          priceAddon: 'Still processing...',
+                          cakeDesignDetails: 'Analysis taking longer than expected - please refresh',
+                          cakeType: 'Still processing...',
+                          height: 'Still processing...',
+                          hasRealData: false,
+                          needsRefresh: true
+                      }));
+                      setProcessingState('complete');
+                      setProcessingMessage('Processing may take longer - please refresh!');
+                      console.log('⚠️ Refresh option enabled');
+                  }
+              } catch (error) {
+                  console.error('❌ Polling error:', error);
+                  if (attempts < maxAttempts) {
+                      console.log(`🔁 Retrying after error in 5 seconds`);
+                      setTimeout(pollForData, 5000);
+                  } else {
+                      setPriceResult(prevResult => ({
+                          ...prevResult,
+                          priceAddon: 'Error',
+                          cakeDesignDetails: 'Please refresh to try again',
+                          cakeType: 'Error',
+                          height: 'Error',
+                          hasRealData: false,
+                          needsRefresh: true
+                      }));
+                      setProcessingState('error');
+                      setProcessingMessage('Error occurred - please refresh!');
+                      console.log('❌ Error state set');
+                  }
+              }
+          };
+          
+          // Start polling after 5 seconds
+          console.log('⏰ Starting polling in 5 seconds...');
+          setTimeout(pollForData, 5000);
           
       } catch (err) {
-          console.error(err);
-          setError("Failed to get price. Please try again.");
-      } finally {
-          setIsProcessing(false);
+          console.error('❌ Price calculation failed:', err);
+          setError(`Failed to calculate price: ${err.message}`);
+          setProcessingState('error');
+          setProcessingMessage('Failed to start analysis');
       }
   };
+  
+  // Simplified refresh function
+  const handleRefreshPrice = async () => {
+      if (!priceResult || !priceResult.rowId) return;
+      
+      setProcessingState('processing');
+      setProcessingMessage('Refreshing pricing data...');
+      
+      try {
+          const data = await fetchPricingData(priceResult.rowId);
+          console.log('Refresh fetched data:', data);
+          
+          if (data && data.priceaddon !== null && data.priceaddon !== undefined) {
+              setPriceResult({
+                  priceAddon: `+₱${data.priceaddon}`,
+                  cakeDesignDetails: data.infoaddon || 'Design analyzed',
+                  cakeType: data.type || 'Custom',
+                  height: data.thickness || 'Standard',
+                  rowId: data.rowid,
+                  supabaseUrl: priceResult.supabaseUrl,
+                  hasRealData: true
+              });
+              setProcessingState('complete');
+              setProcessingMessage('Pricing data refreshed!');
+              setError(null);
+          } else {
+              setError('Pricing data not ready yet. Please try again in a few seconds.');
+              setProcessingState('idle');
+              setProcessingMessage('');
+          }
+      } catch (error) {
+          console.error('Refresh failed:', error);
+          setError('Failed to refresh pricing. Please try again.');
+          setProcessingState('idle');
+          setProcessingMessage('');
+      }
+  };
+  
+  // Cleanup on component unmount
+  useEffect(() => {
+      return () => {
+          // Cleanup search operations
+          if (searchAbortController.current) {
+              searchAbortController.current.abort();
+              searchAbortController.current = null;
+          }
+          // Cleanup upload operations
+          if (uploadAbortController.current) {
+              uploadAbortController.current.abort();
+              uploadAbortController.current = null;
+          }
+          // Reset refs
+          isProcessingUpload.current = false;
+          pendingSearchQuery.current = null;
+      };
+  }, []);
 
   // --- Google CSE Handlers & Effects ---
-  const executeCseSearch = (query) => {
+  const executeCseSearch = useCallback((query) => {
     if (!query || !query.trim()) {
       console.log('No query provided, skipping search');
       setIsSearching(false);
@@ -277,6 +483,12 @@ export default function App() {
       setIsSearching(false);
       return;
     }
+    
+    // Cancel previous search if in progress
+    if (searchAbortController.current) {
+      searchAbortController.current.abort();
+    }
+    searchAbortController.current = new AbortController();
     
     console.log('Executing search for:', query);
     setIsSearching(true);
@@ -295,16 +507,22 @@ export default function App() {
         cseElement.execute(query);
         console.log('Search executed successfully for:', query);
         // Set searching to false after a delay to allow results to load
-        setTimeout(() => setIsSearching(false), 1000);
+        setTimeout(() => {
+          if (!searchAbortController.current.signal.aborted) {
+            setIsSearching(false);
+          }
+        }, 1000);
       } else {
         console.error('CSE element or execute method not available');
         setIsSearching(false);
       }
     } catch (err) {
       console.error('executeCseSearch error:', err);
-      setIsSearching(false);
+      if (!searchAbortController.current.signal.aborted) {
+        setIsSearching(false);
+      }
     }
-  };
+  }, []);
   
 
   const handleSearch = () => { 
@@ -333,6 +551,13 @@ export default function App() {
       handleSearch();
       return false;
     }
+    
+    // Handle Escape key to close results
+    if (e.key === 'Escape' && showResults) {
+      e.preventDefault();
+      closeResults();
+      return false;
+    }
   };
   const closeResults = () => setShowResults(false);
 
@@ -350,6 +575,13 @@ export default function App() {
       return;
     }
     
+    // Check if this is the same query to prevent duplicate searches
+    if (pendingSearchQuery.current === searchQuery) {
+      console.log('Same query already processed, skipping...');
+      return;
+    }
+    
+    pendingSearchQuery.current = searchQuery;
     console.log('useEffect triggered for search:', searchQuery);
     
     // Small delay to ensure the search container is ready
@@ -385,7 +617,7 @@ export default function App() {
     return () => {
       clearTimeout(timeoutId);
     };
-  }, [showResults, searchQuery]);
+  }, [showResults, searchQuery, executeCseSearch]);
 
   useEffect(() => {
     if (!showResults) return;
@@ -439,7 +671,7 @@ export default function App() {
                               <h3 className="text-base sm:text-lg font-semibold text-gray-700">Upload Your Cake Design</h3>
                               <button 
                                 onClick={() => setIsUploadOpen(false)} 
-                                className="touch-target p-2 text-gray-500 hover:text-gray-700 rounded-full hover:bg-gray-100 transition-colors" 
+                                className="p-3 text-gray-500 hover:text-gray-700 rounded-full hover:bg-gray-100 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center" 
                                 aria-label="Close"
                               >
                                   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 sm:h-6 sm:w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -450,12 +682,12 @@ export default function App() {
                           <div 
                             onDragOver={handleDragOver} 
                             onDrop={handleDrop} 
-                            onClick={() => !isProcessing && document.getElementById('fileInput').click()} 
-                            className={`border-2 border-dashed border-gray-300 rounded-xl p-8 sm:p-12 text-center cursor-pointer hover:border-purple-400 hover:bg-purple-50 transition-all duration-300 touch-target ${
-                              isProcessing ? 'opacity-50 cursor-not-allowed' : ''
+                            onClick={() => processingState === 'idle' && document.getElementById('fileInput').click()} 
+                            className={`border-2 border-dashed border-gray-300 rounded-xl p-8 sm:p-12 text-center cursor-pointer hover:border-purple-400 hover:bg-purple-50 transition-all duration-300 min-h-[120px] ${
+                              processingState !== 'idle' ? 'opacity-50 cursor-not-allowed' : ''
                             }`}
                           >
-                              {isProcessing ? (
+                              {processingState !== 'idle' ? (
                                 <div className="mb-4">
                                   <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500 mx-auto mb-4"></div>
                                   <p className="text-purple-700 font-medium text-sm sm:text-base">
@@ -478,7 +710,7 @@ export default function App() {
                                 </>
                               )}
                           </div>
-                          <input id="fileInput" type="file" accept="image/*" onChange={handleFileChange} className="hidden" disabled={isProcessing} />
+                          <input id="fileInput" type="file" accept="image/*" onChange={handleFileChange} className="hidden" disabled={processingState !== 'idle'} />
                       </div>
                    </div>
                ) : (
@@ -500,7 +732,7 @@ export default function App() {
                           />
                           <button 
                             onClick={handleSearch} 
-                            className="p-3 rounded-xl bg-gradient-to-r from-pink-500 to-purple-500 text-white hover:opacity-90 transition-opacity duration-200 ml-2 min-w-[44px] min-h-[44px] flex items-center justify-center" 
+                            className="p-3 rounded-xl bg-gradient-to-r from-pink-500 to-purple-500 text-white hover:opacity-90 active:scale-95 transition-all duration-200 ml-2 min-w-[44px] min-h-[44px] flex items-center justify-center" 
                             aria-label="Search"
                           >
                               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -513,7 +745,7 @@ export default function App() {
                       {/* Upload button is separate, full-width */}
                       <button 
                         onClick={() => setIsUploadOpen(true)} 
-                        className="w-full bg-white rounded-2xl shadow-lg border border-gray-200 hover:shadow-xl transition-all duration-300 p-4 flex items-center justify-center space-x-3 min-h-[56px]" 
+                        className="w-full bg-white rounded-2xl shadow-lg border border-gray-200 hover:shadow-xl active:scale-[0.98] transition-all duration-300 p-4 flex items-center justify-center space-x-3 min-h-[56px]" 
                         aria-label="Upload Image"
                       >
                           <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -536,7 +768,7 @@ export default function App() {
                         />
                         <button 
                           onClick={handleSearch} 
-                          className="touch-target p-2 sm:p-3 rounded-full bg-gradient-to-r from-pink-500 to-purple-500 text-white hover:opacity-90 transition-opacity duration-200 mx-1 sm:mx-2" 
+                          className="p-3 sm:p-4 rounded-full bg-gradient-to-r from-pink-500 to-purple-500 text-white hover:opacity-90 active:scale-95 transition-all duration-200 mx-1 sm:mx-2 min-w-[44px] min-h-[44px] flex items-center justify-center" 
                           aria-label="Search"
                         >
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 sm:h-6 sm:w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -546,7 +778,7 @@ export default function App() {
                         <div className="w-px h-6 sm:h-8 bg-gray-200"></div>
                         <button 
                           onClick={() => setIsUploadOpen(true)} 
-                          className="touch-target p-2 sm:p-3 rounded-full hover:bg-gray-100 cursor-pointer transition-colors duration-200 ml-1 sm:ml-2" 
+                          className="p-3 sm:p-4 rounded-full hover:bg-gray-100 active:scale-95 cursor-pointer transition-all duration-200 ml-1 sm:ml-2 min-w-[44px] min-h-[44px] flex items-center justify-center" 
                           aria-label="Upload Image"
                         >
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 sm:h-6 sm:w-6 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -581,17 +813,65 @@ export default function App() {
 
                   {/* Actions & Results */}
                   <div className="mt-4">
+                      {/* Show processing indicator during pricing calculation */}
+                      {processingState === 'processing' && (
+                          <div className="mb-4">
+                              <ProcessingIndicator 
+                                  state={processingState}
+                                  message={processingMessage}
+                                  duration={40}
+                              />
+                          </div>
+                      )}
+                      
                       {priceResult ? (
                           // Price Result View
                           <div className="text-left p-4 bg-green-50 rounded-lg border border-green-200">
-                             <h4 className="font-bold text-xl sm:text-2xl text-green-800 mb-2">Estimated Price: {priceResult.price}</h4>
-                             <ul className="list-disc list-inside mt-2 text-green-700 space-y-1">
-                                  {priceResult.breakdown.map((item, i) => <li key={i} className="text-sm sm:text-base">{item}</li>)}
-                             </ul>
-                             <button 
-                               onClick={() => {setPriceResult(null); setGallery([]);}} 
-                               className="mt-4 w-full bg-gray-200 text-gray-800 py-3 rounded-lg font-medium touch-target hover:bg-gray-300 transition-colors"
-                             >
+                             <h4 className="font-bold text-xl sm:text-2xl text-green-800 mb-2">Price-addon: {priceResult.priceAddon}</h4>
+                             <div className="space-y-2 text-green-700">
+                                 <p><span className="font-medium">Cake Design Details:</span> {priceResult.cakeDesignDetails}</p>
+                                 <p><span className="font-medium">Cake Type:</span> {priceResult.cakeType}</p>
+                                 <p><span className="font-medium">Height:</span> {priceResult.height}</p>
+                             </div>
+                             
+                             {/* Show refresh button if data is not complete */}
+                             {priceResult.needsRefresh && (
+                                 <div className="mt-3">
+                                     <button 
+                                         onClick={handleRefreshPrice}
+                                         disabled={processingState !== 'idle'}
+                                         className="bg-blue-500 text-white px-4 py-3 rounded-lg font-medium hover:bg-blue-600 active:scale-95 transition-all duration-200 disabled:opacity-50 min-h-[44px]"
+                                     >
+                                         {processingState === 'processing' ? 'Refreshing...' : 'Refresh Price'}
+                                     </button>
+                                     <p className="text-sm text-blue-600 mt-1">AI analysis may take up to 40 seconds. Please try refreshing if data is not ready.</p>
+                                 </div>
+                             )}
+                             
+                             {/* Display UUID and Supabase confirmation */}
+                             {priceResult.rowId && (
+                                 <div className="mt-3 p-3 bg-white rounded border border-green-300">
+                                     <div className="flex items-center space-x-2 mb-2">
+                                         <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                                         <span className="text-green-700 text-sm font-medium">
+                                             {priceResult.hasRealData ? 'Successfully processed by AI' : 'Processing in progress'}
+                                         </span>
+                                     </div>
+                                     <p className="text-gray-600 text-xs sm:text-sm">
+                                         <span className="font-medium">Row ID:</span> <span className="font-mono bg-gray-100 px-2 py-1 rounded text-xs">{priceResult.rowId}</span>
+                                     </p>
+                                     {priceResult.supabaseUrl && (
+                                         <p className="text-gray-600 text-xs mt-1">
+                                             <span className="font-medium">Image URL:</span> <a href={priceResult.supabaseUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-xs break-all">{priceResult.supabaseUrl}</a>
+                                         </p>
+                                     )}
+                                 </div>
+                             )}
+                             
+                              <button 
+                                onClick={() => {setPriceResult(null); setGallery([]);}} 
+                                className="mt-4 w-full bg-gray-200 text-gray-800 py-4 rounded-lg font-medium hover:bg-gray-300 active:scale-[0.98] transition-all duration-200 min-h-[48px]"
+                              >
                                Start Over
                              </button>
                           </div>
@@ -600,10 +880,10 @@ export default function App() {
                           <div className="space-y-3">
                                <button 
                                  onClick={handleCalculatePrice} 
-                                 disabled={isProcessing} 
-                                 className="bg-gradient-to-r from-pink-500 to-purple-500 text-white px-8 py-3 rounded-full font-medium hover:opacity-90 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed w-full"
+                                 disabled={processingState !== 'idle'} 
+                                 className="bg-gradient-to-r from-pink-500 to-purple-500 text-white px-8 py-4 rounded-full font-medium hover:opacity-90 active:scale-95 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed w-full min-h-[48px]"
                                >
-                                  {isProcessing ? 'Calculating...' : 'Calculate Price with AI'}
+                                  {processingState !== 'idle' ? 'Calculating...' : 'Calculate Price with AI'}
                               </button>
                               <button 
                                 onClick={() => setGallery([])} 
@@ -614,7 +894,25 @@ export default function App() {
                           </div>
                       )}
                   </div>
-                  {error && <p className="text-red-500 mt-4 text-sm sm:text-base">{error}</p>}
+                  {error && (
+                    <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                      <div className="flex items-start space-x-3">
+                        <svg className="h-5 w-5 text-red-500 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <div>
+                          <p className="text-red-800 text-sm sm:text-base font-medium">Error</p>
+                          <p className="text-red-700 text-sm mt-1">{error}</p>
+                          <button 
+                            onClick={() => setError(null)} 
+                            className="mt-2 text-red-600 hover:text-red-800 text-sm underline"
+                          >
+                            Dismiss
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
               </div>
           )}
           
@@ -637,7 +935,7 @@ export default function App() {
                     />
                     <button 
                       onClick={handleSearch} 
-                      className="p-2 rounded-lg bg-gradient-to-r from-pink-500 to-purple-500 text-white hover:opacity-90 transition-opacity duration-200 ml-2 min-w-[40px] min-h-[40px] flex items-center justify-center" 
+                      className="p-3 rounded-lg bg-gradient-to-r from-pink-500 to-purple-500 text-white hover:opacity-90 active:scale-95 transition-all duration-200 ml-2 min-w-[44px] min-h-[44px] flex items-center justify-center" 
                       aria-label="Search"
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -646,7 +944,7 @@ export default function App() {
                     </button>
                     <button 
                       onClick={closeResults} 
-                      className="p-2 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors duration-200 ml-1 min-w-[40px] min-h-[40px] flex items-center justify-center" 
+                      className="p-3 rounded-lg hover:bg-gray-100 active:scale-95 cursor-pointer transition-all duration-200 ml-1 min-w-[44px] min-h-[44px] flex items-center justify-center" 
                       aria-label="Close Search"
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -669,7 +967,7 @@ export default function App() {
                     />
                     <button 
                       onClick={handleSearch} 
-                      className="touch-target p-2 sm:p-3 rounded-full bg-gradient-to-r from-pink-500 to-purple-500 text-white hover:opacity-90 transition-opacity duration-200 mx-1 sm:mx-2" 
+                      className="p-3 sm:p-4 rounded-full bg-gradient-to-r from-pink-500 to-purple-500 text-white hover:opacity-90 active:scale-95 transition-all duration-200 mx-1 sm:mx-2 min-w-[44px] min-h-[44px] flex items-center justify-center" 
                       aria-label="Search"
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 sm:h-6 sm:w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -679,7 +977,7 @@ export default function App() {
                     <div className="w-px h-6 sm:h-8 bg-gray-200"></div>
                     <button 
                       onClick={closeResults} 
-                      className="touch-target p-2 sm:p-3 rounded-full hover:bg-gray-100 cursor-pointer transition-colors duration-200 ml-1 sm:ml-2" 
+                      className="p-3 sm:p-4 rounded-full hover:bg-gray-100 active:scale-95 cursor-pointer transition-all duration-200 ml-1 sm:ml-2 min-w-[44px] min-h-[44px] flex items-center justify-center" 
                       aria-label="Close Search"
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 sm:h-6 sm:w-6 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">

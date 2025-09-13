@@ -131,13 +131,34 @@ export function ProcessingIndicator({
       </div>
       
       {display.showProgress && (
-        <ProgressBar 
-          duration={duration}
-          autoStart={state === "processing"}
-          showPercentage={true}
-          className="mt-2"
-          label=""
-        />
+        <div className="mt-2">
+          {progress > 0 ? (
+            // External progress provided
+            <>
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-sm text-purple-600 font-medium">Progress</span>
+                <span className="text-sm text-purple-500">{Math.floor(progress)}%</span>
+              </div>
+              
+              <div className="w-full bg-pink-100 rounded-full h-3 overflow-hidden shadow-inner">
+                <div 
+                  className="h-full bg-gradient-to-r from-pink-500 to-purple-500 rounded-full transition-all duration-300 ease-out"
+                  style={{ width: `${progress}%` }}
+                >
+                  <div className="h-full bg-gradient-to-r from-transparent via-white to-transparent opacity-30 animate-pulse"></div>
+                </div>
+              </div>
+            </>
+          ) : (
+            // Use internal progress bar
+            <ProgressBar 
+              duration={duration} 
+              autoStart={true} 
+              label="Processing" 
+              showPercentage={true}
+            />
+          )}
+        </div>
       )}
     </div>
   );
