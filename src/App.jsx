@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-// import { uploadImageToSupabase, saveImageToDatabase } from './supabase.js';
+import { useState, useEffect } from 'react';
+import { uploadImageToSupabase, saveImageToDatabase } from './supabase.js';
 
 // --- Helper Functions ---
 
@@ -93,18 +94,15 @@ export default function App() {
       setError(null);
       console.log('Uploading image to Supabase...');
       
-      // Temporary: Skip Supabase upload for now
-      throw new Error('Supabase not configured');
-      
       // Upload image to Supabase Storage
-      // const { filePath, publicUrl } = await uploadImageToSupabase(file);
-      // console.log('Image uploaded successfully:', publicUrl);
+      const { filePath, publicUrl } = await uploadImageToSupabase(file);
+      console.log('Image uploaded successfully:', publicUrl);
       
       // Save to database
-      // const dbRecord = await saveImageToDatabase(publicUrl, file.name);
-      // console.log('Image data saved to database:', dbRecord);
+      const dbRecord = await saveImageToDatabase(publicUrl, file.name);
+      console.log('Image data saved to database:', dbRecord);
       
-      // return { publicUrl, dbRecord };
+      return { publicUrl, dbRecord };
     } catch (error) {
       console.error('Failed to upload to Supabase:', error);
       setError(`Upload failed: ${error.message}`);

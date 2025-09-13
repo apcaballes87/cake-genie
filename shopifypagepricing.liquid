@@ -1,0 +1,1425 @@
+<link rel="canonical" href="https://www.cakesandmemories.com/pages/cake-price-calculator">
+
+<script type="application/ld+json">
+{
+  "@context":"https://schema.org",
+  "@type":"BreadcrumbList",
+  "itemListElement":[
+    { "@type":"ListItem","position":1,"name":"Home","item":"https://www.cakesandmemories.com/" },
+    { "@type":"ListItem","position":2,"name":"Cake Price Calculator for Customized Cakes","item":"https://www.cakesandmemories.com/pages/cake-price-calculator" }
+  ]
+}
+</script>
+
+<script type="application/ld+json">
+{
+  "@context":"https://schema.org",
+  "@type":"HowTo",
+  "name":"Get an instant custom cake price in Cebu or Cavite",
+  "description":"Upload a cake photo or describe it, see a price breakdown in seconds, and order online.",
+  "totalTime":"PT2M",
+  "estimatedCost":{"@type":"MonetaryAmount","currency":"PHP","value":"Varies"},
+  "step":[
+    {"@type":"HowToStep","name":"Upload or describe your cake","text":"Add a cake photo or describe the design, size, and toppers."},
+    {"@type":"HowToStep","name":"See instant pricing","text":"AI shows base price and add-ons clearly for Cebu or Cavite."},
+    {"@type":"HowToStep","name":"Add to cart and checkout","text":"Choose delivery or pickup and place your order."}
+  ]
+}
+</script>
+
+<script type="application/ld+json">
+{
+  "@context":"https://schema.org",
+  "@type":"Bakery",
+  "name":"Cakes and Memories",
+  "url":"https://www.cakesandmemories.com/",
+  "image":"https://www.cakesandmemories.com/cdn/shop/files/hero-example.jpg",
+  "telephone":"+63-XXX-XXX-XXXX",
+  "address":{
+    "@type":"PostalAddress",
+    "streetAddress":"(Your Cebu pickup/commissary address)",
+    "addressLocality":"Cebu City",
+    "addressRegion":"Cebu",
+    "postalCode":"6000",
+    "addressCountry":"PH"
+  },
+  "areaServed":[
+    {"@type":"AdministrativeArea","name":"Cebu City"},
+    {"@type":"AdministrativeArea","name":"Cavite"}
+  ],
+  "sameAs":[
+    "https://www.facebook.com/cakesandmemoriescebu",
+    "https://www.instagram.com/yourhandle"
+  ]
+}
+</script>
+
+<script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+
+<link rel="preconnect" href="https://congofivupobtfudnhni.supabase.co" crossorigin>
+
+<style>
+  #loading-spinner{border:4px solid rgba(0,0,0,.1);width:36px;height:36px;border-radius:50%;border-left-color:#d66c84;animation:spin 1s linear infinite;margin:1rem auto}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  .chip-group{display:flex;flex-wrap:wrap;gap:.5rem;justify-content:center;margin:.5rem 0 1rem}
+  .chip{padding:.45rem .8rem;border:1px solid #f3a9b8;background:#fff;color:#d66c84;border-radius:999px;cursor:pointer;user-select:none;font-size:.9rem}
+  .chip.active{background:#d66c84;color:#fff;border-color:#d66c84}
+  .label{font-weight:700;color:#d66c84;margin-top:.9rem}
+  .hint{font-size:.85rem;color:#666;margin-top:.25rem}
+  .size-row{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.6rem .8rem;border:1px solid #eee;border-radius:.6rem;margin:.35rem 0}
+  .btn{padding:.4rem .7rem;background:#d66c84;color:#fff;border-radius:8px;text-decoration:none;font-size:.9rem;white-space:nowrap}
+  .btn.secondary{background:#f8c1cc;color:#d66c84}
+
+  #progress-container{width:100%;background:#f8dce3;border-radius:10px;overflow:hidden;margin-top:1rem;height:12px}
+  #progress-bar{height:100%;background:#d66c84;width:0%;transition:width .3s linear}
+  #progress-label{margin-top:.5rem;font-size:.85rem;color:#d66c84}
+
+  /* Similar products */
+  #similar-products{margin-top:24px}
+
+  /* Force 2 cols mobile, 3 cols desktop for the embedded search view */
+  .similar-grid{ display:grid; grid-template-columns: repeat(2, 1fr); gap:.75rem; }
+  @media (min-width: 768px){ .similar-grid{ grid-template-columns: repeat(3, 1fr); } }
+
+  /* Card styles (reused by the embedded search view) */
+  .sp-card{border:1px solid #eee;border-radius:10px;overflow:hidden;background:#fff;display:flex;flex-direction:column;text-decoration:none}
+  .sp-img{display:block;aspect-ratio:1/1;overflow:hidden;background:#fafafa}
+  .sp-img img{width:100%;height:100%;object-fit:cover}
+  .sp-body{padding:.6rem .7rem;display:flex;flex-direction:column;gap:.35rem}
+  .sp-title{color:#333;font-weight:600;line-height:1.2}
+  .sp-price{color:#d66c84;font-weight:700}
+  .debug{font-size:.85rem;color:#9c2237;margin-top:.25rem}
+
+  /* SEO blocks */
+  .seo-wrap{max-width:840px;margin:0 auto 1.25rem auto;padding:0 16px;font-family:sans-serif}
+  .seo-wrap h1{color:#d66c84;margin:1.2rem 0 .5rem;font-size:2rem;line-height:1.2}
+  .seo-wrap h2{color:#333;margin:1.2rem 0 .4rem;font-size:1.25rem}
+  .seo-wrap p,.seo-wrap li{color:#333;line-height:1.6}
+  .seo-hero{display:flex;flex-direction:column;gap:.5rem}
+  .seo-bullets{margin:.5rem 0 1rem 1rem}
+  
+  /* Modal Styles */
+  .modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  }
+  .modal-content {
+    background: white;
+    padding: 2rem;
+    border-radius: 10px;
+    text-align: center;
+    max-width: 400px;
+    width: 90%;
+  }
+  .modal-content label {
+    display: block;
+    margin-top: 1rem;
+    font-weight: bold;
+    color: #333;
+    text-align: left;
+  }
+  .modal-content input {
+    width: 100%;
+    padding: 0.5rem;
+    margin-top: 0.25rem;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    box-sizing: border-box;
+  }
+  .modal-content button {
+    margin-top: 1.5rem;
+    width: 100%;
+  }
+
+  /* Share buttons styles */
+.share-buttons {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.share-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  text-decoration: none;
+  font-size: 12px;
+  font-weight: 500;
+  color: white;
+  transition: opacity 0.3s ease;
+}
+
+.share-btn:hover {
+  opacity: 0.8;
+}
+
+.messenger-btn {
+  background: #0084ff;
+}
+
+.facebook-btn {
+  background: #1877f2;
+}
+
+.share-icon {
+  width: 14px;
+  height: 14px;
+}
+
+/* Status indicators for share buttons */
+#messenger-status, #facebook-status {
+  opacity: 0.3;
+  font-size: 10px;
+  margin-left: 2px;
+}
+
+#messenger-status.completed, #facebook-status.completed {
+  opacity: 1;
+  color: #28a745;
+}
+
+.share-btn.completed {
+  background-color: #28a745 !important;
+}
+</style>
+
+<div style="text-align:center; margin: 1.5rem 0; font-family:sans-serif;">
+  <h1 style="color:#d66c84; font-size:2rem; margin:0;">
+    Cake Price Calculator for Customized Cakes
+  </h1>
+  <p></p>
+  <p>This feature is in beta. We appreciate your understanding!</p>
+  
+  <div style="max-width:520px;margin:2rem auto;text-align:center;font-family:sans-serif;padding:20px;">
+  <div style="padding: 20px; background: #fff3f5; border: 2px dashed #f3a9b8; border-radius: 8px;">
+    <p style="color: #d66c84; font-weight: bold; margin: 0 0 10px 0; font-size: 14px;">
+      🎉 Get 20% OFF when you share this to 3 of your friends on Facebook Messenger and post this on Facebook!
+    </p>
+    
+    <div class="share-buttons" style="justify-content: center; gap: 10px;">
+      <a href="#" class="share-btn messenger-btn" id="messenger-share">
+        <svg class="share-icon" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12,2C6.486,2,2,6.262,2,11.5c0,2.835,1.245,5.386,3.224,7.145L4.1,21.7l3.224-1.581C8.754,20.71,10.325,21,12,21c5.514,0,10-4.262,10-9.5S17.514,2,12,2z"/>
+        </svg>
+        Share <span id="messenger-status">✓</span>
+      </a>
+      <a href="#" class="share-btn facebook-btn" id="facebook-share">
+        <svg class="share-icon" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+        </svg>
+        Post <span id="facebook-status">✓</span>
+      </a>
+    </div>
+    
+    <div id="discount-status" style="margin-top: 10px; font-size: 12px; color: #28a745; display: none;">
+      🎉 20% Discount is now active in your cart.
+    </div>
+  </div>
+</div>
+</div>
+
+<div id="supabase-uploader" style="max-width:520px;margin:2rem auto;text-align:center;font-family:sans-serif;padding:20px;">
+  <h2 style="color:#d66c84;">Upload your cake design</h2>
+
+  <div id="drop-area" role="button" tabindex="0"
+       style="padding:2rem;border:2px dashed #f3a9b8;border-radius:8px;background:#ffe8ed;cursor:pointer;margin:1rem 0;"
+       aria-label="Upload a cake image to get instant pricing">
+    Drag &amp; drop, paste, or click to select an image
+  </div>
+  <input type="file" id="file-input" accept="image/*" style="display:none;">
+  <div id="status" style="margin-top:.5rem;color:#d66c84;"></div>
+  <div id="pricing-result" style="margin-top:1rem;color:#333;"></div>
+</div>
+
+<div id="date-time-modal" class="modal-overlay" style="display: none;">
+  <div class="modal-content">
+    <h3>Select Shipping Details</h3>
+    <p>Please choose your desired date and time for shipping.</p>
+    
+    <label for="shipping-date">Shipping Date:</label>
+    <input type="date" id="shipping-date" name="attributes[Shipping Date]" required>
+    
+    <label for="shipping-time">Shipping Time:</label>
+    <input type="time" id="shipping-time" name="attributes[Shipping Time]" required>
+    
+    <button id="confirm-datetime-btn" class="btn">Confirm & Proceed to Checkout</button>
+    <div id="modal-status" style="margin-top: 0.5rem; color: #d66c84;"></div>
+  </div>
+</div>
+
+<script>
+
+// Track sharing completion
+let messengerShared = false;
+let facebookPosted = false;
+
+// Function to apply discount code
+async function applyDiscountCode() {
+  if (messengerShared && facebookPosted) {
+    try {
+      // Apply discount code to cart
+      const response = await fetch('/cart/update.js', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          attributes: { 
+            'Discount Code': 'G964W316X6S2',
+            'Discount Applied': 'true'
+          }
+        })
+      });
+      
+      if (response.ok) {
+        // Redirect to discount URL to apply the code
+        window.open('https://cakesandmemories.com/discount/G964W316X6S2', '_blank');
+        
+        // Show success message
+        const statusEl = document.getElementById('discount-status');
+        if (statusEl) {
+          statusEl.style.display = 'block';
+        }
+        
+        // Store completion in session
+        sessionStorage.setItem('discount_applied', 'true');
+      }
+    } catch (error) {
+      console.error('Error applying discount:', error);
+      // Still redirect to discount URL as fallback
+      window.open('https://cakesandmemories.com/discount/G964W316X6S2', '_blank');
+    }
+  }
+}
+
+// Check if discount was already applied
+function checkDiscountStatus() {
+  const discountApplied = sessionStorage.getItem('discount_applied');
+  if (discountApplied) {
+    document.getElementById('discount-status').style.display = 'block';
+    messengerShared = true;
+    facebookPosted = true;
+    document.getElementById('messenger-status').classList.add('completed');
+    document.getElementById('facebook-status').classList.add('completed');
+    document.getElementById('messenger-share').classList.add('completed');
+    document.getElementById('facebook-share').classList.add('completed');
+  }
+}
+
+document.getElementById('messenger-share').addEventListener('click', function(e) {
+  e.preventDefault();
+  const url = encodeURIComponent(window.location.href);
+  const text = encodeURIComponent('Check out this instant cake price calculator! Get quotes for custom cakes in Cebu and Cavite.');
+  
+  // Try to open Messenger
+  const messengerUrl = `https://m.me/?text=${text}%20${url}`;
+  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  
+  if (isMobile) {
+    window.location.href = `fb-messenger://share/?link=${url}`;
+    setTimeout(() => {
+      window.open(messengerUrl, '_blank');
+    }, 1000);
+  } else {
+    window.open(messengerUrl, 'messenger-share', 'width=600,height=400,scrollbars=yes,resizable=yes');
+  }
+  
+  // Add 5-second delay before marking as completed
+  setTimeout(() => {
+    messengerShared = true;
+    document.getElementById('messenger-status').classList.add('completed');
+    document.getElementById('messenger-share').classList.add('completed');
+    
+    // Check if both actions completed after the delay
+    setTimeout(() => applyDiscountCode(), 500);
+  }, 5000);
+});
+
+document.getElementById('facebook-share').addEventListener('click', function(e) {
+  e.preventDefault();
+  const url = encodeURIComponent(window.location.href);
+  const quote = encodeURIComponent('Get instant quotes for custom cakes! Upload a photo and see pricing in seconds. Available in Cebu City and Cavite.');
+  
+  const facebookUrl = `https://www.facebook.com/sharer/sharer.php?u=${url}&quote=${quote}`;
+  window.open(facebookUrl, 'facebook-share', 'width=600,height=400,scrollbars=yes,resizable=yes');
+  
+  // Add 5-second delay before marking as completed
+  setTimeout(() => {
+    facebookPosted = true;
+    document.getElementById('facebook-status').classList.add('completed');
+    document.getElementById('facebook-share').classList.add('completed');
+    
+    // Check if both actions completed after the delay
+    setTimeout(() => applyDiscountCode(), 500);
+  }, 5000);
+});
+
+// Initialize discount status check
+document.addEventListener('DOMContentLoaded', checkDiscountStatus);
+
+document.getElementById('facebook-share').addEventListener('click', function(e) {
+  e.preventDefault();
+  const url = encodeURIComponent(window.location.href);
+  const quote = encodeURIComponent('Get instant quotes for custom cakes! Upload a photo and see pricing in seconds. Available in Cebu City and Cavite.');
+  
+  const facebookUrl = `https://www.facebook.com/sharer/sharer.php?u=${url}&quote=${quote}`;
+  
+  window.open(facebookUrl, 'facebook-share', 'width=600,height=400,scrollbars=yes,resizable=yes');
+});
+
+;(function(){
+  // ===== CONFIG =====
+  const SUPABASE_URL      = 'https://congofivupobtfudnhni.supabase.co';
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNvbmdvZml2dXBvYnRmdWRuaG5pIiwicm9sZSI6ImFub24iLCJpYXQiOjE2ODc1NjkyMTQsImV4cCI6MjAwMzE0NTIxNH0.y2jsrPWt7Q_016e1o8PkM-Ayyti9yzxj3jH9hvH4DiM';
+  const BUCKET_NAME       = 'uploadopenai';
+  const TABLE_UPLOADS     = 'uploadpricing2';
+  const TABLE_FEEDBACK    = 'uploadpricing2feedback';
+
+  // Product sizes lookup (Supabase)
+  const PRODUCTSIZES_TABLE = 'productsizes';
+  const COL_FILTER_TYPE    = 'type';
+  const COL_FILTER_THICK   = 'thickness';
+  const COL_OUT_SIZE       = 'cakesize';
+  const COL_OUT_PRICE      = 'price';
+  const COL_OUT_SORT       = '';
+
+  // DB value style for thickness is text
+  const THICKNESS_IS_NUMERIC = false;
+
+  // ===== Cake Type chips =====
+  const CAKETYPE_WITH_BENTO = ['Bento','1 Tier','1 Tier Fondant','2 Tier','2 Tier Fondant','3 Tier','3 Tier Fondant','Square','Rectangle'];
+  const CAKETYPE_NO_BENTO   = ['1 Tier','1 Tier Fondant','2 Tier','2 Tier Fondant','3 Tier','3 Tier Fondant','Square','Rectangle'];
+  let   showBentoChip       = false;
+
+  function getCakeTypeOptions(){ return showBentoChip ? CAKETYPE_WITH_BENTO : CAKETYPE_NO_BENTO; }
+
+  // Height options
+  const HEIGHT_ALL = ['2 in','3 in','4 in','5 in','6 in'];
+
+  // Auto height per cake type
+  const TYPE_TO_HEIGHT = {
+    'Bento': '2 in',
+    '1 Tier': '4 in',
+    '1 Tier Fondant': '5 in',
+    '2 Tier': '4 in',
+    '2 Tier Fondant': '5 in',
+    '3 Tier': '4 in',
+    '3 Tier Fondant': '5 in',
+    'Square': '3 in',
+    'Rectangle': '3 in'
+  };
+
+  // ===== EXACT VARIANT MAP =====
+  const VARIANT_MAP = {
+    '999':'46747186790656','1099':'46747215298816','1199':'46747186757888',
+    '1299':'46747186561280','1399':'46747215397120','1499':'46747215331584',
+    '1599':'46747186823424','1699':'46747215364352','1799':'46750226153728',
+    '1899':'46750226186496','1999':'46750226219264','2099':'46750226252032',
+    '2199':'46750226415872','2299':'46750226383104','2399':'46750226284800',
+    '2499':'46750226317568','2599':'46750226350336','2699':'46750226448640',
+    '2799':'46750226481408','2899':'46750226514176','2999':'46750226546944',
+    '3099':'46750237982976','3199':'46750238015744',
+    '3299':'46911751028992','3399':'46911751061760','3499':'46911751094528',
+    '3599':'46911751127296','3699':'46911751160064','3799':'46911751192832',
+    '3899':'46911751225600','3999':'46911751258368','4099':'46911751291136',
+    '4199':'46911751323904','4299':'46911751356672','4399':'46911751389440',
+    '4499':'46911751422208','4599':'46911751454976','4699':'46911751487744',
+    '4799':'46911751520512','4899':'46911751553280','4999':'46911751586048',
+    '299':'46921785442560','399':'46921785475328','499':'46921785508096',
+    '5099':'46921785540864','5199':'46921785573632','5299':'46921785606400',
+    '5399':'46921785639168','5499':'46921785671936','5599':'46921785704704',
+    '5699':'46921785737472','5799':'46921785770240','5899':'46921785803008',
+    '5999':'46921785835776','6099':'46921785868544'
+  };
+
+  // Behavior
+  const PROCESS_SECS = 35;
+  const REFRESH_ADDON_ON_CHIP = true;
+  const ADDON_LIMIT = 99998;
+
+  // ===== STATE =====
+  let lastPublicUrl = '';
+  let currentRowId = null;
+  let pricingArrived = false;
+
+  let selectedCakeType = '';
+  let selectedHeight   = '';
+  let currentAddonPrice = null;
+  let currentInfoAddon  = '—';
+  let currentKeyword    = '';
+  let cakeMessage = '';
+  
+  let sizeCache = {};
+
+  let activeChannel = null, requestTimeoutId=null, progressTimer=null, finalizeTimer=null, chipDebounce=null;
+
+  // ===== GOOGLE SEARCH DETECTION =====
+let isGoogleSearchArrival = false;
+
+// Check early if this is a Google search arrival
+(function detectGoogleSearchEarly() {
+  const urlRowId = getRowIdFromUrl();
+  if (urlRowId) {
+    const existingCache = cacheLoad();
+    
+    // More precise detection: check if this is actually from Google search
+    const referrer = document.referrer;
+    const isFromGoogle = referrer.includes('google.com') || referrer.includes('googleapis.com');
+    const hasUrlParam = new URLSearchParams(window.location.search).has('from_search');
+    
+    // Only treat as Google search if:
+    // 1. Coming from Google domain OR has specific search parameter
+    // 2. AND (no cache OR different rowid)
+    if ((isFromGoogle || hasUrlParam) && (!existingCache || existingCache.rowid !== urlRowId)) {
+      isGoogleSearchArrival = true;
+      console.log('Google search arrival detected early');
+    }
+  }
+})();
+
+// Show immediate loading indicator for Google search arrivals
+if (isGoogleSearchArrival) {
+  // Show animated loading immediately to prevent confusion
+  setTimeout(() => {
+    const statusEl = document.getElementById('status');
+    const dropAreaEl = document.getElementById('drop-area');
+    const pricingEl = document.getElementById('pricing-result');
+    
+    if (statusEl) {
+      statusEl.innerHTML = `
+        <div style="display: flex; align-items: center; justify-content: center; gap: 10px; margin: 1rem 0;">
+          <div id="loading-spinner"></div>
+          <span>Loading your selected image...</span>
+        </div>
+      `;
+    }
+    if (dropAreaEl) {
+      dropAreaEl.textContent = 'Loading selected design...';
+    }
+    if (pricingEl) {
+      pricingEl.innerHTML = `
+        <div style="display: flex; align-items: center; justify-content: center; gap: 10px; color: #666;">
+          <div id="loading-spinner"></div>
+          <span>Preparing your cake design...</span>
+        </div>
+      `;
+    }
+  }, 100); // Show almost immediately
+}
+
+  if (!window.supabase) return console.error('Supabase SDK missing');
+  const sb        = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const dropArea  = document.getElementById('drop-area');
+  const fileInput = document.getElementById('file-input');
+  const status    = document.getElementById('status');
+  const resultDiv = document.getElementById('pricing-result');
+
+  // --- Session cache ---
+  const SESSION_KEY = 'cm_instant_pricing_session_v1';
+  function cacheSave() {
+    try {
+      const snapshot = {
+  rowid:currentRowId, image:lastPublicUrl, addonPrice:currentAddonPrice, infoAddon:currentInfoAddon,
+  type:selectedCakeType, thickness:selectedHeight, keyword:currentKeyword, showBento:showBentoChip, 
+  message:cakeMessage
+};
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify(snapshot));
+    } catch(_) {}
+  }
+  function cacheLoad() {
+    try { const raw = sessionStorage.getItem(SESSION_KEY); return raw ? JSON.parse(raw) : null; }
+    catch(_){ return null; }
+  }
+  function cacheClear(){ try { sessionStorage.removeItem(SESSION_KEY); } catch(_) {} }
+  function setRowIdInUrl(rowId){
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set('rowid', rowId);
+      history.replaceState({ rowid: rowId }, '', url.toString());
+    } catch(_) {}
+  }
+  function getRowIdFromUrl(){
+    try { return new URL(window.location.href).searchParams.get('rowid'); }
+    catch(_){ return null; }
+  }
+
+  // --- AUTH ---
+  async function ensureAuth(){
+    try {
+      const { data } = await sb.auth.getSession();
+      if (!data.session) await sb.auth.signInAnonymously();
+    } catch(e){ console.warn('Auth warning:', e?.message||e); }
+  }
+
+  // ===== Image resize/compress before upload =====
+  const IMG_MAX_LONG_EDGE    = 1800;
+  const IMG_TARGET_MAX_BYTES = 1_200_000;
+  const IMG_QUALITY_START    = 0.85;
+  const IMG_QUALITY_MIN      = 0.60;
+  function canvasToBlobAsync(canvas, type, quality){
+    if ('convertToBlob' in canvas) return canvas.convertToBlob({ type, quality });
+    return new Promise((res) => canvas.toBlob(res, type, quality));
+  }
+  async function decodeToBitmap(file){
+    if ('createImageBitmap' in window) {
+      try { return await createImageBitmap(file, { imageOrientation: 'from-image' }); }
+      catch(_) {}
+    }
+    const img = document.createElement('img');
+    img.decoding = 'async';
+    img.src = URL.createObjectURL(file);
+    await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
+    return img;
+  }
+  async function encodeWithFallback(canvas, quality){
+    let blob = await canvasToBlobAsync(canvas, 'image/webp', quality);
+    if (blob) return { blob, ext: 'webp' };
+    const ctx = canvas.getContext('2d');
+    ctx.globalCompositeOperation = 'destination-over';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    blob = await canvasToBlobAsync(canvas, 'image/jpeg', quality);
+    return { blob, ext: 'jpg' };
+  }
+  async function downscaleAndCompress(file){
+    try {
+      if (!file.type.startsWith('image/')) return { blob: file, ext: (file.name.split('.').pop() || 'bin').toLowerCase() };
+      if (file.type === 'image/gif') return { blob: file, ext: 'gif' };
+
+      const bmp = await decodeToBitmap(file);
+      const srcW = bmp.width, srcH = bmp.height, longEdge = Math.max(srcW, srcH);
+
+      if (longEdge <= IMG_MAX_LONG_EDGE && file.size <= IMG_TARGET_MAX_BYTES) {
+        return { blob: file, ext: (file.name.split('.').pop() || 'jpg').toLowerCase() };
+      }
+
+      const scale = Math.min(1, IMG_MAX_LONG_EDGE / longEdge);
+      const dstW = Math.max(1, Math.round(srcW * scale));
+      const dstH = Math.max(1, Math.round(srcH * scale));
+      const canvas = ('OffscreenCanvas' in window) ? new OffscreenCanvas(dstW, dstH) : Object.assign(document.createElement('canvas'), { width: dstW, height: dstH });
+      const ctx = canvas.getContext('2d', { alpha: true });
+      ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(bmp, 0, 0, dstW, dstH);
+
+      let q = IMG_QUALITY_START, out, tries = 0;
+      do {
+        out = await encodeWithFallback(canvas, q);
+        if (out.blob.size <= IMG_TARGET_MAX_BYTES || q <= IMG_QUALITY_MIN) break;
+        q = Math.max(IMG_QUALITY_MIN, q - 0.1);
+        tries++;
+      } while (tries < 5);
+      return out;
+    } catch (e) {
+      console.warn('Downscale failed, uploading original:', e);
+      return { blob: file, ext: (file.name.split('.').pop() || 'jpg').toLowerCase() };
+    }
+  }
+
+  // ===== UI Helpers =====
+  function getAllowedHeights(type){
+    switch(type){
+      case 'Bento': return ['2 in'];
+      case '1 Tier': return ['3 in','4 in','5 in','6 in'];
+      case '2 Tier': case '3 Tier': return ['4 in','5 in'];
+      case '1 Tier Fondant': return ['5 in','6 in'];
+      case '2 Tier Fondant': case '3 Tier Fondant': return ['5 in','6 in'];
+      case 'Square': case 'Rectangle': return ['3 in','4 in'];
+      default: return HEIGHT_ALL.filter(h => h !== '2 in');
+    }
+  }
+  function renderHeightChips(allowed){
+    const heightHost = document.getElementById('height-chips');
+    if (!heightHost) return;
+    heightHost.innerHTML = '';
+    allowed.forEach(opt=>{
+      const chip = document.createElement('div');
+      chip.className = 'chip'; chip.dataset.value = opt; chip.textContent = opt;
+      chip.addEventListener('click', () => {
+        [...heightHost.children].forEach(c=>c.classList.remove('active'));
+        chip.classList.add('active');
+        selectedHeight = opt;
+        reloadAndQuery();
+        cacheSave();
+      });
+      heightHost.appendChild(chip);
+    });
+    if (!allowed.includes(selectedHeight)) selectedHeight = allowed[0] || '';
+    activateHeightChip(selectedHeight);
+  }
+  function enforceAddonLimit(){
+    const overLimit = Number(currentAddonPrice ?? -1) > ADDON_LIMIT;
+    const typeBlock = document.getElementById('caketype-block');
+    const heightBlock = document.getElementById('height-block');
+    const sizesWrap = document.getElementById('sizes-wrap');
+    const note = document.getElementById('addon-limit-note');
+
+    if (typeBlock) typeBlock.style.display = overLimit ? 'none' : '';
+    if (heightBlock) heightBlock.style.display = overLimit ? 'none' : '';
+    if (sizesWrap) sizesWrap.style.display = overLimit ? 'none' : '';
+    if (note) note.style.display = overLimit ? 'block' : 'none';
+  }
+  function showPendingPriceNotice(){
+    const el = document.getElementById('pending-price-note');
+    if (el) {
+      el.textContent = 'We’re finalizing your price. Please click “Refresh Price” in a few seconds to update your quote.';
+      el.style.display = 'block';
+    }
+  }
+  function hidePendingPriceNotice(){
+    const el = document.getElementById('pending-price-note');
+    if (el) el.style.display = 'none';
+  }
+
+  // --- Upload handlers ---
+  dropArea.addEventListener('click', () => fileInput.click());
+  dropArea.addEventListener('keydown', e => { if(e.key==='Enter'||e.key===' '){ e.preventDefault(); fileInput.click(); }});
+  dropArea.addEventListener('dragover', e => { e.preventDefault(); dropArea.style.background='#ffd5dd'; });
+  dropArea.addEventListener('dragleave', () => dropArea.style.background='#ffe8ed');
+  dropArea.addEventListener('drop', async e => {
+    e.preventDefault(); dropArea.style.background='#ffe8ed';
+    if (e.dataTransfer.files.length) await handleFile(e.dataTransfer.files[0]);
+  });
+  document.addEventListener('paste', async e => {
+    for (let item of (e.clipboardData?.items||[])) {
+      if (item.type.startsWith('image/')) return await handleFile(item.getAsFile());
+    }
+  });
+  fileInput.addEventListener('change', async e => { if (e.target.files.length) await handleFile(e.target.files[0]); });
+
+  // --- Initial Load Logic ---
+  (function restoreFromCacheFirst(){
+  if (isGoogleSearchArrival) {
+    console.log('Skipping cache restoration for Google search');
+    return;
+  }
+    const snap = cacheLoad();
+    if (!snap) return;
+    currentRowId = snap.rowid || null; lastPublicUrl = snap.image || '';
+    currentAddonPrice = (snap.addonPrice === null || snap.addonPrice === undefined) ? null : Number(snap.addonPrice);
+    currentInfoAddon = snap.infoAddon || '—'; selectedCakeType = snap.type || '';
+    selectedHeight = snap.thickness || ''; currentKeyword = snap.keyword || ''; showBentoChip = !!snap.showBento; cakeMessage = snap.message || '';
+
+    if (lastPublicUrl) {
+      status.innerHTML = `🔁 Restored.<br><img src="${lastPublicUrl}" style="max-width:60%;margin-top:1rem;" alt="Prev design" />`;
+      dropArea.textContent = 'Restored (click to change)';
+    }
+    showPricingAndChips(); applyPreselection(selectedCakeType, selectedHeight);
+    const priceEl=document.getElementById('addon-price-val');
+    const infoEl =document.getElementById('addon-info-val');
+    if (priceEl && currentAddonPrice !== null && Number(currentAddonPrice) > 0) priceEl.textContent = `(+₱${Number(currentAddonPrice)})`;
+    if (infoEl) infoEl.textContent  = currentInfoAddon;
+    updateRefreshVisibility(); enforceAddonLimit(); maybeFetchSizes(); maybeLoadSimilar();
+    if (currentRowId) setRowIdInUrl(currentRowId);
+  })();
+  (async function restoreFromUrlRowId(){
+  if (isGoogleSearchArrival) {
+    console.log('Skipping URL restoration for Google search');
+    return;
+  }
+    if (cacheLoad()) return;
+    const rid = getRowIdFromUrl();
+    if (!rid) return;
+    try{
+      await ensureAuth();
+      const { data } = await sb.from(TABLE_UPLOADS).select('rowid,image,priceaddon,infoaddon,type,thickness,keyword').eq('rowid', rid).single();
+      if (!data) return;
+      currentRowId = data.rowid; lastPublicUrl = data.image || '';
+      currentAddonPrice = (data.priceaddon === null || data.priceaddon === undefined) ? null : Number(data.priceaddon);
+      currentInfoAddon = data.infoaddon || '—'; selectedCakeType = data.type || ''; selectedHeight = data.thickness || '';
+      currentKeyword = (data.keyword || '').trim(); showBentoChip = data.type === 'Bento';
+      if (lastPublicUrl) {
+        status.innerHTML = `🔁 Restored.<br><img src="${lastPublicUrl}" style="max-width:60%;margin-top:1rem;" alt="Prev design" />`;
+        dropArea.textContent = 'Restored (click to change)';
+      }
+      showPricingAndChips(); renderCakeTypeChips(); initialLoadFromDB(data); maybeLoadSimilar(); cacheSave();
+    }catch(e){ console.warn('URL restore failed:', e?.message||e); }
+  })();
+
+  // ===== Core App Logic =====
+  function genUUID(){
+    if (self.crypto?.randomUUID) return crypto.randomUUID();
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c=>{
+      const r = Math.random()*16|0, v = c==='x' ? r : (r&0x3|0x8); return v.toString(16);
+    });
+  }
+  async function handleFile(file){
+    resetStateUI(); await ensureAuth();
+    status.textContent = 'Uploading…';
+    dropArea.textContent = `Selected: ${file.name.length>30? file.name.slice(0,27)+'…' : file.name}`;
+
+    try{
+      const prepared = await downscaleAndCompress(file);
+      const path = `${Date.now()}.${prepared.ext || 'jpg'}`;
+      const { data: upData, error: upErr } = await sb.storage.from(BUCKET_NAME).upload(path, prepared.blob);
+      if (upErr) throw upErr;
+
+      const { data: urlData } = sb.storage.from(BUCKET_NAME).getPublicUrl(upData.path);
+      lastPublicUrl = urlData.publicUrl;
+      status.innerHTML = `✅ Uploaded!<br><img src="${lastPublicUrl}" style="max-width:60%;margin-top:1rem;" alt="Uploaded cake design" />`;
+
+      const newRowUuid = genUUID();
+      const { data: insData, error: insErr } = await sb.from(TABLE_UPLOADS).insert({ rowid: newRowUuid, image: lastPublicUrl }).select('rowid').single();
+      if (insErr) throw insErr;
+      currentRowId = insData?.rowid || newRowUuid;
+
+      setRowIdInUrl(currentRowId); cacheSave();
+
+      document.getElementById('pricing-result').innerHTML = `<p>⏳ Processing your design...</p><div id="progress-container"><div id="progress-bar"></div></div><div id="progress-label">0%</div>`;
+      startProgressBar(PROCESS_SECS);
+      listenForUpdate(currentRowId);
+      finalizeTimer = setTimeout(() => { if (!pricingArrived) finalizeProcessing(currentRowId); }, PROCESS_SECS*1000);
+    }catch(err){ console.error(err); status.textContent = `❌ ${err.message}`; }
+  }
+  function resetStateUI(){
+    if (requestTimeoutId) clearTimeout(requestTimeoutId);
+    if (activeChannel) sb.removeChannel(activeChannel);
+    if (progressTimer) clearInterval(progressTimer);
+    if (finalizeTimer) clearTimeout(finalizeTimer);
+    [activeChannel, requestTimeoutId, progressTimer, finalizeTimer] = [null,null,null,null];
+    pricingArrived=false; currentAddonPrice = null;
+    document.getElementById('pricing-result').textContent='';
+    document.getElementById('status').textContent='';
+    hidePendingPriceNotice();
+  }
+  function startProgressBar(d){
+    const bar=document.getElementById('progress-bar'), lab=document.getElementById('progress-label');
+    let t0=Date.now();
+    progressTimer=setInterval(()=>{
+      const pct=Math.min(((Date.now()-t0)/1000)/d*100,100);
+      if(bar) bar.style.width=pct+'%';
+      if(lab) lab.textContent=Math.floor(pct)+'%';
+      if(pct>=100) clearInterval(progressTimer);
+    },200);
+  }
+  function completeProgressBar(){
+    if(progressTimer) clearInterval(progressTimer);
+    const bar=document.getElementById('progress-bar'), lab=document.getElementById('progress-label');
+    if(bar) bar.style.width='100%'; if(lab) lab.textContent='100%';
+  }
+  function listenForUpdate(rowId){
+    requestTimeoutId = setTimeout(() => { if (!pricingArrived) finalizeProcessing(rowId); }, 60000);
+    activeChannel=sb.channel(`pricing-watch-${rowId}`).on('postgres_changes',{event:'UPDATE',schema:'public',table:TABLE_UPLOADS,filter:`rowid=eq.${rowId}`}, payload=>{
+      const d=payload.new;
+      if (d && (d.priceaddon!==null && d.priceaddon!==undefined)) {
+        pricingArrived=true; completeProgressBar(); cleanupListener(); showPricingAndChips();
+        currentKeyword = (d.keyword || '').trim();
+        showBentoChip = d.type === 'Bento' || showBentoChip;
+        renderCakeTypeChips(); initialLoadFromDB(d); maybeLoadSimilar(); cacheSave();
+      }
+    }).subscribe();
+  }
+  function cleanupListener(){
+    if(requestTimeoutId) clearTimeout(requestTimeoutId);
+    if(activeChannel) sb.removeChannel(activeChannel);
+    [activeChannel, requestTimeoutId] = [null, null];
+  }
+  async function finalizeProcessing(rowId){
+  completeProgressBar(); cleanupListener();
+  try{
+    await ensureAuth();
+    const { data } = await sb.from(TABLE_UPLOADS).select('rowid, image, priceaddon, infoaddon, type, thickness, keyword').eq('rowid', rowId).single();
+    
+    if (!data || data.priceaddon === null) {
+      // Show only refresh button and message when priceaddon is null
+      showRefreshOnlyInterface();
+    } else {
+      // Show full pricing interface when priceaddon has a value
+      showPricingAndChips();
+      currentKeyword = (data?.keyword || '').trim();
+      showBentoChip  = (data?.type === 'Bento') || showBentoChip;
+      renderCakeTypeChips(); initialLoadFromDB(data || {}); maybeLoadSimilar(); cacheSave(); enforceAddonLimit();
+    }
+  }catch(e){ 
+    console.error('Finalize fetch error:', e); 
+    showRefreshOnlyInterface(); 
+  }
+}
+
+function showRefreshOnlyInterface(){
+  const resultDiv = document.getElementById('pricing-result');
+  resultDiv.innerHTML = `
+    <h3>Processing Complete</h3>
+    <div style="display:flex;gap:.5rem;justify-content:center;margin-bottom:.6rem;">
+      <button id="refresh-addon-btn" class="btn secondary">Refresh Price</button>
+    </div>
+    <div class="hint" style="color:#9c2237;margin:.25rem 0 .5rem;text-align:center;">
+      Please refresh the price in a few seconds to see your quote.
+    </div>
+    <div style="display:flex;justify-content:center;margin-top:12px;">
+      <a href="https://m.me/cakesandmemoriescebu" target="_blank" class="btn" style="background:#f8c1cc;color:#d66c84;min-width:260px;text-align:center">💬 Talk to our Cake Consultants</a>
+    </div>
+    <div style="display:flex;justify-content:center;margin-top:.6rem;">
+      <button id="reset-session-btn" class="btn secondary" style="min-width:200px;">Start over</button>
+    </div>
+  `;
+
+  // Add event listeners for the buttons
+  document.getElementById('refresh-addon-btn').addEventListener('click', refreshAddon);
+  document.getElementById('reset-session-btn').addEventListener('click', () => {
+    cacheClear(); lastPublicUrl = ''; currentRowId = null; selectedCakeType = ''; selectedHeight = '';
+    currentAddonPrice = null; currentInfoAddon = '—'; currentKeyword = ''; showBentoChip = false; cakeMessage = '';
+    sizeCache = {}; hidePendingPriceNotice();
+    document.getElementById('status').textContent = '';
+    document.getElementById('pricing-result').textContent = '';
+    document.getElementById('drop-area').textContent = 'Drag & drop, paste, or click to select an image';
+    try{
+      const url=new URL(window.location.href); url.searchParams.delete('rowid'); history.replaceState({},'',url.toString());
+    }catch(_){}
+  });
+}
+
+  // --- UI Construction ---
+  function showPricingAndChips(){
+    const resultDiv = document.getElementById('pricing-result');
+    resultDiv.innerHTML = `
+      <h3>Your Instant Add-on Quote</h3>
+      <div style="display:flex;gap:.5rem;justify-content:center;margin-bottom:.6rem;">
+        <button id="refresh-addon-btn" class="btn secondary">Refresh Price</button>
+      </div>
+      <div id="pending-price-note" class="hint" style="display:none;color:#9c2237;margin:.25rem 0 .5rem;"></div>
+      <p><strong>Cake Design Details:</strong> <span id="addon-info-val">${currentInfoAddon}</span></p>
+      <div id="addon-limit-note" class="hint" style="display:none;color:#9c2237;margin:.25rem 0 .75rem;">
+        This design appears complex and requires a manual quote. Please chat with our Cake Consultants to proceed.
+      </div>
+      <div id="caketype-block">
+        <div class="label" style="margin-top:1rem">Cake Type (Default Icing: Soft Icing)</div>
+        <div id="caketype-chips" class="chip-group"></div>
+      </div>
+      <div id="height-block">
+  <div class="label">Height auto-picks for each cake type. You can still change it.</div>
+  <div id="height-chips" class="chip-group"></div>
+</div>
+<div id="message-block">
+  <div class="label">Cake Message (Optional)</div>
+  <div class="hint">Add a personalized message for your cake (e.g., "Happy Birthday Sarah!", "Congratulations!")</div>
+  <textarea id="cake-message" rows="2" maxlength="100" placeholder="Type your cake message here..." style="width:100%;padding:.5rem;border:1px solid #eee;border-radius:8px;resize:vertical;margin-top:.5rem;font-family:sans-serif;"></textarea>
+  <div style="text-align:right;margin-top:.25rem;">
+    <span id="message-count" class="hint">0 / 100</span>
+  </div>
+</div>
+      <div id="sizes-wrap" style="margin-top:1rem;text-align:left">
+        <div style="color:#666">Choose Cake Type and Height to see available price.</div>
+        <div id="sizes-debug" class="debug"></div>
+      </div>
+      <div style="display:flex;justify-content:center;margin-top:12px;">
+        <a href="https://m.me/cakesandmemoriescebu" target="_blank" class="btn" style="background:#f8c1cc;color:#d66c84;min-width:260px;text-align:center">💬 Talk to our Cake Consultants</a>
+      </div>
+      <div style="display:flex;justify-content:center;margin-top:.6rem;">
+        <button id="reset-session-btn" class="btn secondary" style="min-width:200px;">Start over</button>
+      </div>
+
+      <div id="similar-products">
+        <h3 style="color:#d66c84;">Similar Cakes Designs</h3>
+        <div id="similar-note" class="hint" style="margin:.25rem 0 .5rem;display:none;"></div>
+        <div id="similar-grid"></div>
+        <div id="similar-empty" style="color:#666;display:none;">No similar items yet.</div>
+        <div id="similar-viewall" style="text-align:center;margin-top:.75rem;display:none;">
+          <a id="similar-viewall-link" class="btn secondary" href="#">View all</a>
+        </div>
+      </div>
+
+      <div id="feedback-wrap" style="max-width:520px;margin:1rem auto 0 auto;">
+        <div class="label" style="text-align:center;margin:.8rem 0 .4rem;">Customer Feedback</div>
+        <div class="hint" style="text-align:center;margin-bottom:.4rem;">Tell us if the price feels too expensive, cheap, or just right. Problems? Improvements?</div>
+        <textarea id="feedback-text" rows="4" maxlength="500" placeholder="Type your comment here…" style="width:100%;padding:.7rem;border:1px solid #eee;border-radius:8px;resize:vertical;"></textarea>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:.4rem;">
+          <span id="feedback-count" class="hint">0 / 500</span>
+          <button id="feedback-submit" class="btn secondary">Submit comment</button>
+        </div>
+        <div id="feedback-status" class="hint" style="margin-top:.35rem;display:none;"></div>
+      </div>
+    `;
+
+    document.getElementById('refresh-addon-btn').addEventListener('click', refreshAddon);
+    document.getElementById('reset-session-btn').addEventListener('click', () => {
+      cacheClear(); lastPublicUrl = ''; currentRowId = null; selectedCakeType = ''; selectedHeight = '';
+      currentAddonPrice = null; currentInfoAddon = '—'; currentKeyword = ''; showBentoChip = false; cakeMessage = '';
+      sizeCache = {}; hidePendingPriceNotice();
+      document.getElementById('status').textContent = '';
+      document.getElementById('pricing-result').textContent = '';
+      document.getElementById('drop-area').textContent = 'Drag & drop, paste, or click to select an image';
+      try{
+        const url=new URL(window.location.href); url.searchParams.delete('rowid'); history.replaceState({},'',url.toString());
+      }catch(_){}
+    });
+    const fbText = document.getElementById('feedback-text'), fbSubmit = document.getElementById('feedback-submit');
+    fbText.addEventListener('input', () => { document.getElementById('feedback-count').textContent = `${fbText.value.length} / 500`; });
+    fbSubmit.addEventListener('click', submitFeedback);
+    renderCakeTypeChips(); renderHeightChips(getAllowedHeights(selectedCakeType || getCakeTypeOptions()[0]));
+    updateRefreshVisibility(); enforceAddonLimit();
+    // Add character counter for cake message
+const cakeMessageEl = document.getElementById('cake-message');
+const messageCountEl = document.getElementById('message-count');
+if (cakeMessageEl && messageCountEl) {
+  cakeMessageEl.addEventListener('input', () => {
+    const length = cakeMessageEl.value.length;
+    messageCountEl.textContent = `${length} / 100`;
+    cakeMessage = cakeMessageEl.value;
+    cacheSave();
+  });
+  if (cakeMessage) {
+    cakeMessageEl.value = cakeMessage;
+    messageCountEl.textContent = `${cakeMessage.length} / 100`;
+  }
+}
+  }
+  
+  // --- Data & Event Handlers ---
+  async function submitFeedback(){
+    const fbText = document.getElementById('feedback-text'), fbSubmit = document.getElementById('feedback-submit'), fbStatus = document.getElementById('feedback-status');
+    const remark = (fbText.value || '').trim();
+    if (!remark) {
+      fbStatus.style.display = 'block'; fbStatus.style.color = '#9c2237'; fbStatus.textContent = 'Please enter a comment.'; return;
+    }
+    fbSubmit.disabled = true; fbStatus.style.display = 'block'; fbStatus.style.color = '#666'; fbStatus.textContent = 'Saving…';
+    try{
+      await ensureAuth();
+      const payload = { rowid: currentRowId || genUUID(), customerremarks: remark, addonprice: currentAddonPrice, image: lastPublicUrl, infowithprice: currentInfoAddon };
+      await sb.from(TABLE_FEEDBACK).insert(payload);
+      if (!currentRowId) { currentRowId = payload.rowid; setRowIdInUrl(currentRowId); cacheSave(); }
+      fbStatus.style.color = '#2e7d32'; fbStatus.textContent = '✅ Thanks! Your comment has been saved.';
+    }catch(e){ console.error('Feedback save error:', e); fbStatus.style.color = '#9c2237'; fbStatus.textContent = '❌ Could not save comment.'; }
+    finally{ fbSubmit.disabled = false; }
+  }
+  function renderCakeTypeChips(){
+    const container = document.getElementById('caketype-chips');
+    if (!container) return;
+    container.innerHTML = '';
+    getCakeTypeOptions().forEach(opt => {
+      const chip = document.createElement('div');
+      chip.className = 'chip'; chip.dataset.value = opt; chip.textContent = opt;
+      chip.addEventListener('click', () => {
+        container.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        selectedCakeType = opt;
+        const allowed = getAllowedHeights(opt), mapped = TYPE_TO_HEIGHT[opt];
+        selectedHeight = allowed.includes(mapped) ? mapped : (allowed[0] || '');
+        renderHeightChips(allowed); reloadAndQuery(); cacheSave();
+      });
+      container.appendChild(chip);
+    });
+    if (selectedCakeType) [...container.children].forEach(c => c.classList.toggle('active', c.dataset.value === selectedCakeType));
+  }
+  function activateHeightChip(value){
+    const heightGroup = document.getElementById('height-chips');
+    if (heightGroup) [...heightGroup.children].forEach(c => c.classList.toggle('active', c.dataset.value === value));
+  }
+  function applyPreselection(typeFromDB, thicknessFromDB) {
+    const desiredType = typeFromDB || selectedCakeType || getCakeTypeOptions()[0];
+    const allowed = getAllowedHeights(desiredType);
+    const derivedHeight = TYPE_TO_HEIGHT[desiredType || ''] || selectedHeight || allowed[0];
+    selectedCakeType = desiredType;
+    selectedHeight = thicknessFromDB && allowed.includes(thicknessFromDB) ? thicknessFromDB : (allowed.includes(derivedHeight) ? derivedHeight : allowed[0]);
+    renderCakeTypeChips(); renderHeightChips(allowed);
+  }
+  function initialLoadFromDB(rowData){
+    currentRowId = rowData?.rowid || currentRowId;
+    lastPublicUrl = rowData?.image || lastPublicUrl;
+    currentAddonPrice = (rowData?.priceaddon !== null && rowData?.priceaddon !== undefined) ? Number(rowData.priceaddon) : null;
+    currentInfoAddon = rowData?.infoaddon || '—';
+    const priceEl=document.getElementById('addon-price-val'), infoEl=document.getElementById('addon-info-val');
+    if (priceEl && currentAddonPrice !== null && Number(currentAddonPrice) > 0) priceEl.textContent = `(+₱${Number(currentAddonPrice)})`;
+    if (infoEl) infoEl.textContent = currentInfoAddon;
+    if (currentAddonPrice !== null) hidePendingPriceNotice();
+    updateRefreshVisibility(); applyPreselection(rowData?.type, rowData?.thickness); maybeFetchSizes(); cacheSave(); enforceAddonLimit();
+  }
+  function updateRefreshVisibility(){
+    const btn = document.getElementById('refresh-addon-btn');
+    if (!btn) return;
+    const hasAddon = (currentAddonPrice !== null && currentAddonPrice !== undefined);
+    btn.style.display = hasAddon ? 'none' : 'inline-flex';
+    if (hasAddon) hidePendingPriceNotice();
+  }
+ async function refreshAddon(){
+  const btn=document.getElementById('refresh-addon-btn');
+  if(!currentRowId) return;
+  try{
+    btn.disabled=true; await ensureAuth();
+    const { data } = await sb.from(TABLE_UPLOADS).select('rowid,image,priceaddon,infoaddon,type,thickness,keyword').eq('rowid', currentRowId).single();
+    currentRowId = data?.rowid || currentRowId; lastPublicUrl = data?.image || lastPublicUrl;
+    currentAddonPrice = (data?.priceaddon !== null && data?.priceaddon !== undefined) ? Number(data.priceaddon) : null;
+    currentInfoAddon = data?.infoaddon || '—'; currentKeyword = (data?.keyword || '').trim(); showBentoChip = data?.type === 'Bento' || showBentoChip;
+    
+    // Check if we now have pricing data
+    if (currentAddonPrice !== null) {
+      // Show full pricing interface when we have addon price
+      showPricingAndChips();
+      renderCakeTypeChips(); 
+      applyPreselection(data?.type, data?.thickness);
+      await maybeFetchSizes(); 
+      maybeLoadSimilar(); 
+      cacheSave(); 
+      enforceAddonLimit();
+      
+      // Update the price display elements
+      const priceEl=document.getElementById('addon-price-val'), infoEl=document.getElementById('addon-info-val');
+      if (priceEl && Number(currentAddonPrice) > 0) priceEl.textContent = `(+₱${Number(currentAddonPrice)})`;
+      if (infoEl) infoEl.textContent = currentInfoAddon;
+    } else {
+      // Still no pricing, show refresh-only interface again
+      showRefreshOnlyInterface();
+    }
+  }catch(e){ 
+    console.error('Refresh error:', e); 
+    alert('Still finalizing price. Please try again in a few seconds.'); 
+    // Show refresh interface again on error
+    showRefreshOnlyInterface();
+  }
+  finally{ 
+    // Only re-enable button if it still exists (might be recreated by showRefreshOnlyInterface)
+    const currentBtn = document.getElementById('refresh-addon-btn');
+    if (currentBtn) currentBtn.disabled = false;
+  }
+}
+  async function reloadAndQuery() {
+    if (chipDebounce) clearTimeout(chipDebounce);
+    chipDebounce = setTimeout(async () => {
+      const sizesWrap = document.getElementById('sizes-wrap');
+      if (sizesWrap) sizesWrap.innerHTML = `<div id="loading-spinner"></div><div id="sizes-debug" class="debug"></div>`;
+      try {
+        if (REFRESH_ADDON_ON_CHIP && currentRowId) {
+          await ensureAuth();
+          const { data } = await sb.from(TABLE_UPLOADS).select('priceaddon,infoaddon,keyword,type').eq('rowid', currentRowId).single();
+          if (data) {
+            currentAddonPrice = (data.priceaddon === null || data.priceaddon === undefined) ? null : Number(data.priceaddon);
+            currentInfoAddon = data.infoaddon || '—'; currentKeyword = (data.keyword || '').trim(); showBentoChip = data.type === 'Bento' || showBentoChip;
+            const priceEl=document.getElementById('addon-price-val'), infoEl=document.getElementById('addon-info-val');
+            if (priceEl && currentAddonPrice !== null && Number(currentAddonPrice) > 0) priceEl.textContent = `(+₱${Number(currentAddonPrice)})`;
+            if (infoEl) infoEl.textContent = currentInfoAddon;
+            renderCakeTypeChips(); updateRefreshVisibility();
+          }
+        }
+      } catch (e) { console.warn('Chip refresh addon failed:', e?.message || e); }
+      await maybeFetchSizes(); cacheSave(); enforceAddonLimit();
+    }, 150);
+  }
+  function normalizeThickness(val){ return THICKNESS_IS_NUMERIC ? parseInt(val, 10) : val; }
+  
+  function renderSizeRows(rows) {
+  const sizesWrap=document.getElementById('sizes-wrap');
+  const sizesDebug=document.getElementById('sizes-debug');
+  if (!rows || rows.length===0){
+    sizesWrap.innerHTML = `<div>No match for <strong>${selectedCakeType}</strong> • <strong>${selectedHeight}</strong>.</div><div id="sizes-debug" class="debug"></div>`; return;
+  }
+  
+  // Check if discount is active
+  const discountApplied = sessionStorage.getItem('discount_applied');
+  const discountMessage = discountApplied ? '<div style="color:#28a745;font-weight:bold;text-align:center;margin-bottom:1rem;font-size:.9rem;">🎉 20% discount is now active. Add to cart to see your discount!</div>' : '';
+  
+  sizesWrap.innerHTML = discountMessage + rows.map(r=>{
+    const label = r[COL_OUT_SIZE], base = Number(r[COL_OUT_PRICE]||0), addon = Number(currentAddonPrice || 0), total = Math.round(base + addon);
+    const variantId = VARIANT_MAP[String(total)] || null, hasVariant = !!variantId;
+    return `
+      <div class="size-row">
+        <div><strong>${label}</strong></div>
+        <div style="margin-left:auto">₱${total}</div>
+        ${hasVariant ? `<button class="btn add-to-cart-btn" data-variant-id="${variantId}">Add to cart</button>` : `<span style="color:#999">No variant for ₱${total}</span>`}
+      </div>
+    `;
+  }).join('');
+  if (sizesDebug) sizesDebug.textContent = [...sizesWrap.querySelectorAll('.size-row span')].length > 0 ? 'Some totals have no matching variant in VARIANT_MAP.' : '';
+}
+  async function maybeFetchSizes(){
+    const sizesWrap=document.getElementById('sizes-wrap');
+    if (!selectedCakeType || !selectedHeight){
+      sizesWrap.innerHTML = `<div style="color:#666">Choose Cake Type and Height to see available price.</div><div id="sizes-debug" class="debug"></div>`; return;
+    }
+    const cacheKey = `${selectedCakeType}|${selectedHeight}`;
+    if (sizeCache[cacheKey]) { renderSizeRows(sizeCache[cacheKey]); return; }
+    
+    sizesWrap.innerHTML = `<div id="loading-spinner"></div><div id="sizes-debug" class="debug"></div>`;
+    const sizesDebug=document.getElementById('sizes-debug');
+    if (sizesDebug) sizesDebug.textContent='';
+
+    try{
+      await ensureAuth();
+      const fields=[COL_OUT_SIZE, COL_OUT_PRICE]; if (COL_OUT_SORT) fields.push(COL_OUT_SORT);
+      let q = sb.from(PRODUCTSIZES_TABLE).select(fields.join(', ')).eq(COL_FILTER_TYPE, selectedCakeType).eq(COL_FILTER_THICK, normalizeThickness(selectedHeight));
+      if (COL_OUT_SORT) q = q.order(COL_OUT_SORT, { ascending:true });
+      const { data: rows, error } = await q;
+      if (error) throw error;
+      sizeCache[cacheKey] = rows; renderSizeRows(rows);
+    }catch(e){
+      console.error('Fetch sizes fatal error:', e);
+      sizesWrap.innerHTML = `<div style="color:#d66c84">Error loading sizes.</div><div id="sizes-debug" class="debug"></div>`;
+      const dbg=document.getElementById('sizes-debug'); if(dbg) dbg.textContent=e?.message||String(e);
+    }
+  }
+
+  // --- AJAX Cart Logic ---
+  const modal = document.getElementById('date-time-modal'), confirmBtn = document.getElementById('confirm-datetime-btn'), modalStatus = document.getElementById('modal-status');
+  
+// Find the current function and replace it with this updated version
+
+async function handleAjaxAddToCart(variantId) {
+  document.body.style.cursor = 'wait';
+  
+  // Get the cake size from the clicked button's parent row
+  const clickedButton = document.querySelector(`[data-variant-id="${variantId}"]`);
+  let cakeSize = 'Not specified';
+  
+  if (clickedButton) {
+    const sizeRow = clickedButton.closest('.size-row');
+    if (sizeRow) {
+      const sizeElement = sizeRow.querySelector('strong');
+      if (sizeElement) {
+        cakeSize = sizeElement.textContent.trim();
+      }
+    }
+  }
+  
+  try {
+    const response = await fetch('/cart/add.js', {
+      method: 'POST', 
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        id: variantId, 
+        quantity: 1, 
+        properties: {
+          'Uploaded Photo': lastPublicUrl, 
+          'Cake Type': selectedCakeType, 
+          'Cake Height': selectedHeight,
+          'Cake Size': cakeSize, // Added cake size here
+          'Details': currentInfoAddon, 
+          'Cake Message': cakeMessage || 'No message'
+        }
+      })
+    });
+    
+    if (!response.ok) throw new Error('Could not add item to cart.');
+    document.body.style.cursor = 'default';
+    
+    // Skip modal and go directly to cart page
+    window.location.href = '/cart';
+  } catch (error) {
+    console.error('Add to cart error:', error); 
+    alert('Sorry, there was an error adding this item to your cart.'); 
+    document.body.style.cursor = 'default';
+  }
+}
+
+  confirmBtn.addEventListener('click', async () => {
+    const dateInput = document.getElementById('shipping-date'), timeInput = document.getElementById('shipping-time');
+    if (!dateInput.value || !timeInput.value) { modalStatus.textContent = 'Please select both a date and time.'; return; }
+    modalStatus.textContent = 'Saving...'; confirmBtn.disabled = true;
+    try {
+      const response = await fetch('/cart/update.js', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ attributes: { 'Shipping Date': dateInput.value, 'Shipping Time': timeInput.value }})
+      });
+      if (!response.ok) throw new Error('Could not save shipping details.');
+      window.location.href = '/checkout';
+    } catch (error) {
+      console.error('Cart update error:', error); modalStatus.textContent = 'Error saving. Please try again.'; confirmBtn.disabled = false;
+    }
+  });
+  document.addEventListener('click', (event) => {
+    if (event.target.closest('.add-to-cart-btn')) {
+      const variantId = event.target.closest('.add-to-cart-btn').dataset.variantId;
+      if (variantId) handleAjaxAddToCart(variantId);
+    }
+    if (event.target.classList.contains('modal-overlay') && !event.target.querySelector('.modal-content').contains(event.target)) {
+      window.location.href = '/checkout';
+    }
+  });
+
+  // ===== Similar Cakes =====
+  function maybeLoadSimilar(){
+    const grid=document.getElementById('similar-grid'), empty=document.getElementById('similar-empty'), note=document.getElementById('similar-note'), cta=document.getElementById('similar-viewall'), ctaA=document.getElementById('similar-viewall-link');
+    if (!grid) return;
+    const term = (currentKeyword || '').trim();
+    if (!term) {
+      grid.innerHTML = ''; if (note) note.style.display = 'none'; if (empty) empty.style.display = 'none'; if (cta) cta.style.display = 'none'; return;
+    }
+    if (note) { note.style.display = 'block'; note.textContent = `Cake Design: “${term}”`; }
+    if (cta && ctaA) { cta.style.display = 'block'; ctaA.href = `/search?type=product&options[prefix]=last&q=${encodeURIComponent(term)}`; ctaA.textContent = `View all “${term}” cake designs`; }
+    grid.innerHTML = `<div id="loading-spinner"></div>`; if (empty) empty.style.display = 'none';
+    loadSimilarProducts(term);
+  }
+  async function loadSimilarProducts(term){
+    const grid=document.getElementById('similar-grid'), empty=document.getElementById('similar-empty');
+    if (!grid || !term) return;
+    try {
+      const res = await fetch(`/search?view=similar&type=product&options[prefix]=last&q=${encodeURIComponent(term)}`, { credentials: 'same-origin' });
+      if (!res.ok) throw new Error('Search view request failed');
+      grid.innerHTML = await res.text();
+      if (empty) empty.style.display = grid.querySelector('.sp-card') ? 'none' : 'block';
+    } catch (e) {
+      console.warn('Inline search failed:', e); grid.innerHTML = ''; if (empty) empty.style.display = 'block';
+    }
+  }
+
+async function handleGoogleSearchArrival() {
+  const urlRowId = getRowIdFromUrl();
+  if (!urlRowId) return;
+  
+  console.log('Google search arrival detected with rowid:', urlRowId);
+  
+  // FIRST: Clear any existing cache to prevent old image from showing
+  cacheClear();
+  
+  try {
+    await ensureAuth();
+    
+    const { data, error } = await sb.from(TABLE_UPLOADS).select('rowid,image,priceaddon,infoaddon,type,thickness,keyword').eq('rowid', urlRowId).single();
+    
+    if (error || !data || !data.image) {
+      console.error('Database error or no image:', error);
+      return;
+    }
+    
+    console.log('Fresh data from database:', data);
+    console.log('New image URL:', data.image);
+    
+    // FORCE reset all state variables
+    lastPublicUrl = '';  // Clear first
+    currentRowId = null;
+    currentAddonPrice = null;
+    currentInfoAddon = '—';
+    selectedCakeType = '';
+    selectedHeight = '';
+    currentKeyword = '';
+    showBentoChip = false;
+    sizeCache = {};
+    
+    // Now set the new values
+    currentRowId = data.rowid;
+    lastPublicUrl = data.image;
+    currentAddonPrice = data.priceaddon ? Number(data.priceaddon) : null;
+    currentInfoAddon = data.infoaddon || '—';
+    selectedCakeType = data.type || '';
+    selectedHeight = data.thickness || '';
+    currentKeyword = data.keyword || '';
+    showBentoChip = data.type === 'Bento';
+    
+    console.log('New state - lastPublicUrl:', lastPublicUrl);
+    
+    // FORCE clear existing UI first
+    const statusElement = document.getElementById('status');
+    const dropAreaElement = document.getElementById('drop-area');
+    const pricingElement = document.getElementById('pricing-result');
+    
+    if (statusElement) {
+      statusElement.innerHTML = ''; // Clear first
+    }
+    if (pricingElement) {
+      pricingElement.innerHTML = ''; // Clear first
+    }
+    
+    // Small delay to ensure clearing happens
+    setTimeout(() => {
+      // Now set the new content
+      if (statusElement) {
+        statusElement.innerHTML = `✅ Google search image loaded.<br><img src="${lastPublicUrl}" style="max-width:60%;margin-top:1rem;" alt="Selected cake design" />`;
+        console.log('Status updated with new image');
+      }
+      
+      if (dropAreaElement) {
+        dropAreaElement.textContent = 'Google search image (click to change)';
+        console.log('Drop area updated');
+      }
+      
+      // Show pricing interface
+if (data.priceaddon) {
+  // Has pricing - show full interface
+  showPricingAndChips();
+  initialLoadFromDB(data);
+  applyPreselection(data.type, data.thickness);
+  maybeFetchSizes();
+  maybeLoadSimilar();
+} else {
+  // No pricing yet - start AI processing with progress bar
+  console.log('No pricing yet, starting AI analysis...');
+  
+  const pricingDiv = document.getElementById('pricing-result');
+  if (pricingDiv) {
+    pricingDiv.innerHTML = `<p>⏳ Processing your design...</p><div id="progress-container"><div id="progress-bar"></div></div><div id="progress-label">0%</div>`;
+    startProgressBar(PROCESS_SECS);
+    listenForUpdate(currentRowId);
+    finalizeTimer = setTimeout(() => { 
+      if (!pricingArrived) finalizeProcessing(currentRowId); 
+    }, PROCESS_SECS * 1000);
+    console.log('Progress bar started for Google search image');
+  } else {
+    console.error('pricing-result div not found!');
+  }
+}
+      
+      // Update cache with new data
+      setRowIdInUrl(currentRowId);
+      cacheSave();
+      
+      console.log('Google search image processing completed');
+      
+    }, 100);
+    
+  } catch (error) {
+    console.error('Error:', error);
+    alert('Error: ' + error.message);
+  }
+}
+  
+  // Initialize Google search handling
+  setTimeout(() => {
+    const urlRowId = getRowIdFromUrl();
+    if (urlRowId) {
+      handleGoogleSearchArrival();
+    }
+  }, 3000);
+
+})();
+
+</script>
+
+<div class="seo-wrap" style="max-width:840px;margin:3rem auto 1.25rem auto;padding:0 16px;font-family:sans-serif">
+  <p>
+    Skip the back-and-forth on Messenger. Upload a cake photo, see the
+    <strong>price instantly</strong>, and order online! Available for delivery or pickup in
+    <strong>Cebu City</strong> and <strong>Cavite</strong>.
+  </p>
+  <ul class="seo-bullets">
+    <li>Instant quotes for custom and decorated cakes</li>
+    <li>Detailed explanation of designs (toppers, drip, macarons, etc.)</li>
+    <li>Fast checkout with delivery or pickup options</li>
+  </ul>
+
+  <h2>Custom Cakes in Cebu and Molino Cavite – Fast and Easy Custom Cake Ordering</h2>
+  <p>
+    We serve Cebu City with made-to-order cakes for birthdays, weddings, and events. Typical lead time is
+    <strong>2–5 days</strong> depending on complexity. Pickup at our Cebu Branches or book a lalamove delivery across Mega Cebu.
+    Explore different cake designs and get instant pricing without waiting for replies.
+    <a href="/search?type=product&q=cake">View all our cake designs</a>.
+  </p>
+
+  <h2>How It Works</h2>
+  <ol>
+    <li>Upload a image of any cake design.</li>
+    <li>Pick a cake size, icing and height. See the price instantly.</li>
+    <li>Add to cart for lalamove delivery or pickup in Cebu or Cavite.</li>
+  </ol>
+
+  <h2>Frequently Asked Questions</h2>
+  <details><summary>How accurate is the instant price?</summary><p>It reflects base size + detected add-ons. If your design changes, price updates automatically.</p></details>
+  <details><summary>Lead time?</summary><p>Usually 2–5 days. Rush options depend on design complexity and schedule.</p></details>
+  <details><summary>Do you deliver to my area?</summary><p>Yes, within Cebu City and Cavite (via Lalamove only + fees vary by distance - NO Motorcycle Deliveries). Pickup is available.</p></details>
+  <details><summary>Can I tweak the design after uploading?</summary><p>Yes. You can change size, icing, and add-ons before checkout; the price updates instantly.</p></details>
+  <details><summary>What if my photo has elements we can’t produce?</summary><p>We’ll flag it and suggest the closest feasible alternative—before you pay.</p></details>
+</div>
+
+{% schema %}
+{
+  "name": "Cake Price Calculator",
+  "settings": [],
+  "blocks": [],
+  "presets": [{ "name": "Cake Price Calculator / Instant Pricing" }]
+}
+{% endschema %}
