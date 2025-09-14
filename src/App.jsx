@@ -30,6 +30,14 @@ export default function App() {
   const [showResults, setShowResults] = useState(false);
   const [isCSELoaded, setIsCSELoaded] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+  
+  // Navigation state for back functionality
+  const [previousSearchState, setPreviousSearchState] = useState(null); // Store search state when navigating away
+  const savedScrollPosition = useRef(0); // Store scroll position
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalResults, setTotalResults] = useState(0);
 
   // Image Handling & Gallery State
   const [gallery, setGallery] = useState([]); // {id, dataUrl, file}
@@ -452,6 +460,58 @@ export default function App() {
       }
   };
   
+  // Back to search results function
+  const handleBackToSearch = () => {
+    if (previousSearchState) {
+      console.log('Restoring search state:', previousSearchState);
+      
+      // Clear gallery and pricing first
+      setGallery([]);
+      setPriceResult(null);
+      setSelectedImageIndex(0);
+      
+      // Clear the search container to ensure fresh results
+      const container = document.getElementById('google-search-container');
+      if (container) {
+        container.innerHTML = '';
+      }
+      
+      // Reset pendingSearchQuery to allow re-searching
+      pendingSearchQuery.current = null;
+      
+      // Restore search state including pagination
+      setSearchInput(previousSearchState.inputValue);
+      setCurrentPage(previousSearchState.currentPage || 1);
+      setTotalResults(previousSearchState.totalResults || 0);
+      setSearchQuery(previousSearchState.query); // This will trigger the search via useEffect
+      setShowResults(true);
+      
+      // Use a more responsive scroll restoration approach
+      const restoreScroll = () => {
+        if (previousSearchState.scrollPosition > 0) {
+          window.scrollTo(0, previousSearchState.scrollPosition);
+        }
+      };
+      
+      // Try immediate scroll restoration
+      setTimeout(restoreScroll, 100);
+      
+      // Backup scroll restoration in case search takes longer
+      setTimeout(restoreScroll, 500);
+      
+      // Final fallback
+      setTimeout(restoreScroll, 1000);
+      
+      console.log('Restored pagination state:', {
+        currentPage: previousSearchState.currentPage || 1,
+        totalResults: previousSearchState.totalResults || 0
+      });
+      
+      // Clear the saved state
+      setPreviousSearchState(null);
+    }
+  };
+  
   // Cleanup on component unmount
   useEffect(() => {
       return () => {
@@ -474,6 +534,18 @@ export default function App() {
   // --- Google Search Image Click Handler ---
   const handleGoogleSearchImageClick = useCallback(async (imageUrl) => {
     console.log('Processing image click:', imageUrl);
+    
+    // Save current search state before navigating away
+    if (showResults) {
+      savedScrollPosition.current = window.scrollY;
+      setPreviousSearchState({
+        query: searchQuery,
+        inputValue: searchInput,
+        scrollPosition: savedScrollPosition.current,
+        currentPage: currentPage,
+        totalResults: totalResults
+      });
+    }
     
     try {
       setProcessingState('uploading');
@@ -515,7 +587,7 @@ export default function App() {
         setError(null);
       }, 5000);
     }
-  }, []);
+  }, [showResults, searchQuery, searchInput]);
   
   // Initialize Google Search Integration
   useEffect(() => {
@@ -776,21 +848,49 @@ export default function App() {
     if (!showResults) return;
     const targetNode = document.getElementById('google-search-container');
     if (!targetNode) return;
+    
     const hideUnwantedElements = (node) => {
       const selectors = '.gcse-result-tabs, .gsc-tabsArea, .gsc-above-wrapper-area, .gsc-above-wrapper-area-container';
       node.querySelectorAll(selectors).forEach(el => el.style.display = 'none');
     };
+    
+    const updatePaginationState = (node) => {
+      // Try to extract current page from Google CSE pagination
+      const currentPageElement = node.querySelector('.gsc-cursor-current-page');
+      if (currentPageElement) {
+        const pageNum = parseInt(currentPageElement.textContent) || 1;
+        setCurrentPage(pageNum);
+        console.log('Detected current page:', pageNum);
+      }
+      
+      // Try to extract total results (this is approximate since Google doesn't always show exact counts)
+      const resultsInfo = node.querySelector('.gsc-results');
+      if (resultsInfo) {
+        const allResults = resultsInfo.querySelectorAll('.gsc-result');
+        if (allResults.length > 0) {
+          setTotalResults(allResults.length);
+          console.log('Detected results count:', allResults.length);
+        }
+      }
+    };
+    
     const observer = new MutationObserver((mutationsList) => {
       for (const mutation of mutationsList) {
         if (mutation.type === 'childList') {
           mutation.addedNodes.forEach(node => {
-            if (node.nodeType === 1) hideUnwantedElements(node);
+            if (node.nodeType === 1) {
+              hideUnwantedElements(node);
+              updatePaginationState(node);
+            }
           });
         }
       }
     });
+    
     observer.observe(targetNode, { childList: true, subtree: true });
     hideUnwantedElements(targetNode);
+    updatePaginationState(targetNode);
+    
     return () => observer.disconnect();
   }, [showResults]);
 
@@ -948,7 +1048,22 @@ export default function App() {
           {gallery.length > 0 && !showResults && (
               <div className="mt-8 p-6 bg-white rounded-xl shadow-lg w-full max-w-2xl text-center animate-fade-in">
                   <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg sm:text-xl font-semibold">Your Cake Design</h3>
+                    <div className="flex items-center space-x-3">
+                      {/* Back button - only show if we have previous search state */}
+                      {previousSearchState && (
+                        <button 
+                          onClick={handleBackToSearch}
+                          className="p-2 rounded-lg hover:bg-gray-100 active:scale-95 transition-all duration-200 flex items-center space-x-2 text-gray-600 hover:text-gray-800"
+                          aria-label="Back to search results"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                          </svg>
+                          <span className="text-sm font-medium">Back to Search</span>
+                        </button>
+                      )}
+                      <h3 className="text-lg sm:text-xl font-semibold">Your Cake Design</h3>
+                    </div>
                     {gallery[selectedImageIndex].publicUrl && (
                       <div className="flex items-center space-x-2 bg-green-100 px-3 py-1 rounded-full">
                         <div className="w-2 h-2 bg-green-500 rounded-full"></div>
