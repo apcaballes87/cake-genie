@@ -531,9 +531,81 @@ export default function App() {
       };
   }, []);
 
+  // Function to extract higher resolution image URL
+  const getHighResImageUrl = (imageUrl, clickedElement) => {
+    console.log('Original image URL:', imageUrl);
+    
+    // Strategy 1: Look for higher res version in parent elements (modal links)
+    let currentElement = clickedElement;
+    for (let i = 0; i < 5 && currentElement; i++) {
+      // Check for Google Images modal link patterns
+      const link = currentElement.closest('a');
+      if (link && link.href) {
+        // Google Images modal URLs often contain the actual source
+        if (link.href.includes('google.com/url') && link.href.includes('url=')) {
+          try {
+            const urlParams = new URLSearchParams(new URL(link.href).search);
+            const actualUrl = urlParams.get('url');
+            if (actualUrl) {
+              console.log('Found modal source URL:', actualUrl);
+              return decodeURIComponent(actualUrl);
+            }
+          } catch (e) {
+            console.log('Could not parse modal URL:', e);
+          }
+        }
+      }
+      currentElement = currentElement.parentElement;
+    }
+    
+    // Strategy 2: Enhance Google User Content URLs
+    if (imageUrl.includes('googleusercontent.com') || imageUrl.includes('ggpht.com')) {
+      // Replace size parameters with higher resolution
+      const enhancedUrl = imageUrl.replace(/[?&]s=\d+/, '').replace(/[?&]w=\d+/, '').replace(/[?&]h=\d+/, '');
+      const separator = enhancedUrl.includes('?') ? '&' : '?';
+      const highResUrl = `${enhancedUrl}${separator}s=2048`;
+      console.log('Enhanced Google User Content URL:', highResUrl);
+      return highResUrl;
+    }
+    
+    // Strategy 3: Handle encrypted Google thumbnail URLs
+    if (imageUrl.includes('encrypted-tbn') && imageUrl.includes('gstatic.com')) {
+      // Try to remove size limitation parameter
+      const enhancedUrl = imageUrl.replace(/[?&]s=\d*/, '');
+      console.log('Enhanced encrypted thumbnail URL:', enhancedUrl);
+      return enhancedUrl;
+    }
+    
+    // Strategy 4: Handle URLs with dimension parameters
+    if (imageUrl.includes('w=') && imageUrl.includes('h=')) {
+      const enhancedUrl = imageUrl
+        .replace(/[?&]w=\d+/, '&w=1920')
+        .replace(/[?&]h=\d+/, '&h=1080');
+      console.log('Enhanced dimension URL:', enhancedUrl);
+      return enhancedUrl;
+    }
+    
+    // Strategy 5: Look for data attributes with higher res URLs
+    const img = clickedElement.tagName === 'IMG' ? clickedElement : clickedElement.querySelector('img');
+    if (img) {
+      const dataSrc = img.getAttribute('data-src') || img.getAttribute('data-original');
+      if (dataSrc && dataSrc !== imageUrl) {
+        console.log('Found data-src with potentially higher resolution:', dataSrc);
+        return dataSrc;
+      }
+    }
+    
+    console.log('No higher resolution found, using original URL');
+    return imageUrl;
+  };
+
   // --- Google Search Image Click Handler ---
-  const handleGoogleSearchImageClick = useCallback(async (imageUrl) => {
+  const handleGoogleSearchImageClick = useCallback(async (imageUrl, clickedElement = null) => {
     console.log('Processing image click:', imageUrl);
+    
+    // Extract higher resolution image URL
+    const highResImageUrl = clickedElement ? getHighResImageUrl(imageUrl, clickedElement) : imageUrl;
+    console.log('Using image URL:', highResImageUrl);
     
     // Save current search state before navigating away
     if (showResults) {
@@ -552,15 +624,15 @@ export default function App() {
       setProcessingMessage('Saving your choice...');
       
       // Save image URL to Supabase database
-      const dbRecord = await saveImageToDatabase(imageUrl, 'selected_from_search');
+      const dbRecord = await saveImageToDatabase(highResImageUrl, 'selected_from_search');
       console.log('Image saved to database:', dbRecord);
       
       // Create a mock image object for the gallery
       const selectedImage = {
         id: dbRecord.id || Date.now() + Math.random(),
-        dataUrl: imageUrl,
+        dataUrl: highResImageUrl,
         file: null, // No actual file since it's from web
-        publicUrl: imageUrl,
+        publicUrl: highResImageUrl,
         dbRecord,
         fromSearch: true
       };
@@ -656,7 +728,7 @@ export default function App() {
           console.log('Valid image URL, processing...');
           event.preventDefault();
           event.stopImmediatePropagation();
-          handleGoogleSearchImageClick(imageUrl);
+          handleGoogleSearchImageClick(imageUrl, clickedElement);
           return false;
         }
       }
