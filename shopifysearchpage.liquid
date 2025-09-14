@@ -1,0 +1,549 @@
+{%- paginate search.results by 60 -%}
+
+<div data-section-type="search">
+                                          <div><p></p></div>
+    <div class="wrapper">
+
+      <div class="grid">
+        <div class="grid__item large--eight-twelfths push--large--two-twelfths">
+          
+            <div class="page-title-wrapper">
+              
+              {%- if search.performed -%}
+              
+               			{% capture page_title %}  {{search.results_count}} cake designs found for {{search.terms}} {% endcapture  %}
+                
+                    {%- if search.results_count == 0 -%}
+
+                                <div class="section-header" style="margin-bottom:-40px">
+                                <div><p> </p></div>
+                                <h1> Screenshot and message us </h1>
+                                <div><h1> </h1></div>
+
+                                <div><p> We don't have this design yet but check out...</p>  
+                           
+                        
+                                  
+                                </div>    
+                              </div>
+              
+
+                        {%- endif -%}
+              
+              {%- else -%}
+                	<div class="section-header">
+                      <div><p></p></div>
+                      <div><p></p></div>
+              		<h1 class="page-title">
+                      {{ 'general.search.title' | t }}
+              		</h1>
+                      <div><p></p></div>
+                       {%- render 'search-bar' -%}
+              		</div>
+              {%- endif -%}
+              
+            </div>
+          
+        </div>
+      </div>
+
+
+    
+    {%- if search.performed -%}
+        {%- assign grid_item_width = 'large--two-twelfths medium--three-twelfths small--four-twelfths' -%}
+      	{% assign sorted = search.results %}
+
+    
+             {%- if search.results_count == 0 -%}
+
+
+
+             {%- else -%}
+
+<div class="collection-tags spacer-bottom">
+<div><h1></h1></div>
+<ul class="inline-list">
+
+<li class="collection-tag-label small--full text-left">
+ <span class="{{ settings.icon }}" aria-hidden="true">hourglass_top</span>
+ {{"Show only cakes available for rush orders"}}
+</li>
+
+  {% assign rush = search.terms | prepend: "https://cakesandmemories.com/search?type=product&q=" | append: "*+rushorders&options%5Bprefix%5D=last" %}
+  {% assign showall = search.terms | prepend: "https://cakesandmemories.com/search?type=product&q=" %}             
+  
+  <li >
+   <a style="background-color:#F6DEE8" href="{{rush}}">
+   {{ "Rush Order" }}
+   </a>
+   </li>
+
+  <li >
+   <a style="background-color:#F6DEE8" href="{{showall| remove:"rushorders" }}">
+   {{ "Show all results" }}
+   </a>
+   </li>
+
+</ul>
+</div>
+
+               
+            <div class="collection-tags spacer-bottom">
+               <div><h1></h1></div>
+             <ul class="inline-list">
+
+
+               <li class="collection-tag-label small--full text-left">  
+                              <span class="{{ settings.icon }}" aria-hidden="true">filter_alt</span>
+                              {{"Filter by"}}
+                            </li>
+
+
+               {% assign onelayer = search.terms | prepend: "https://cakesandmemories.com/search?type=product&q=" | append: "*+1tier&options%5Bprefix%5D=last" %}
+               {% assign twolayer = search.terms | prepend: "https://cakesandmemories.com/search?type=product&q=" | append: "*+2tiers&options%5Bprefix%5D=last" %}
+               {% assign threelayer = search.terms | prepend: "https://cakesandmemories.com/search?type=product&q=" | append: "*+3tiers&options%5Bprefix%5D=last" %}
+               {% assign rectangle = search.terms | prepend: "https://cakesandmemories.com/search?type=product&q=" | append: "*+rectangle&options%5Bprefix%5D=last" %}
+               {% assign cupcake = search.terms | prepend: "https://cakesandmemories.com/search?type=product&q=" | append: "*+cupcakes&options%5Bprefix%5D=last" %}
+               {% assign all = search.terms | prepend: "https://cakesandmemories.com/search?type=product&q=" %}
+
+
+
+                            <li >
+                              <a style="background-color:#F6DEE8" href="{{onelayer| remove:"2tiers"| remove: "3tiers"| remove: "edible photo"| remove: "rectangle"| remove: "cupcakes" }}">
+                                {{ "1-tier" }}
+                              </a>
+                            </li>
+
+                               <li >
+                              <a style="background-color:#F6DEE8" href="{{twolayer| remove:"1tier"| remove: "3tiers"| remove: "edible photo"| remove: "rectangle"| remove: "cupcakes" }}">
+                                {{ "2-tiers"}}
+                              </a>
+                            </li>
+
+                              <li >
+                              <a style="background-color:#F6DEE8" href="{{threelayer| remove:"2tiers"| remove: "1tier"| remove: "edible photo"| remove: "rectangle"| remove: "cupcakes"}}">
+                                {{ "3-tiers & above" }}
+                              </a>
+                            </li>
+
+
+                              <li >
+                              <a style="background-color:#F6DEE8" href="{{rectangle| remove:"2tiers"| remove: "3tiers"| remove: "edible photo"| remove: "1tier"| remove: "cupcakes"}}">
+                                {{ "Rectangular cakes" }}
+                              </a>
+                            </li>
+
+                              <li >
+                              <a style="background-color:#F6DEE8" href="{{cupcake| remove:"2tiers"| remove: "3tiers"| remove: "edible photo"| remove: "rectangle"| remove: "1tier"}}">
+                                {{ "Cupcakes" }}
+                              </a>
+                            </li>
+
+                              <li >
+                              <a style="background-color:#F6DEE8" href="{{ all | remove:"cupcakes"| remove:"2tiers"| remove: "3tiers"| remove: "edible photo"| remove: "rectangle"| remove: "1tier"}}">
+                                {{ "All" }}
+                              </a>
+                            </li>
+                       </ul>
+
+            {% assign sort = search.terms | prepend: "https://cakesandmemories.com/search?type=product&q=" | append: "&options%5Bprefix%5D=last&sort_by=price-ascending" %}
+            {% assign sort2 = search.terms | prepend: "https://cakesandmemories.com/search?type=product&q=" | append: "&options%5Bprefix%5D=last&sort_by=price-descending" %}
+
+            <div class="collection-tags spacer-bottom">
+               <div><h1></h1></div>
+             <ul class="inline-list">
+                            <li class="collection-tag-label small--full text-left">
+                              <span class="{{ settings.icon }}" aria-hidden="true">sort</span>
+                              {{ "Sort by" }}
+                            </li>
+
+                            <li> <a style="background-color:#F6DEE8" href="{{sort}}">
+                                {{ "Lowest Price First" }}</a>
+                            </li>
+
+                            <li><a style="background-color:#F6DEE8" href="{{sort2}}">
+                                {{ "Highest Price First" }}</a>
+                            </li>
+
+
+              </ul>
+            </div>
+            </div>
+
+    
+
+       		 {%- endif -%}
+
+ 
+                        {%- if search.results_count > 0 -%}
+
+                                            <div {% if settings.dbtfy_infinite_scroll %}id="infiniteScrollContainer" {% endif %}class="grid grid-spacer spacer-top-lg">
+                                              {%- for item in sorted -%}
+                                                {%- capture current -%}{% cycle 1, 2, 3, 4, 5, 6 %}{%- endcapture -%}
+
+                                                {%- if item.object_type == 'product' -%}
+                                                  {%- assign product = item -%}	
+                                                  {%- render 'product-grid-item' with product as product, grid_item_width: grid_item_width, current: current -%}
+                                                {%- elsif item.object_type == 'article' -%}
+                                                  {%- assign article = item -%}
+                                                  {%- render 'article-grid-item' with article as article, grid_item_width: grid_item_width, emptyState: emptyState -%}
+                                                {%- else -%}
+
+                                                {%- endif -%}
+
+                                              {%- endfor -%}
+                                            </div>
+                         {%- endif -%}
+                                
+
+                                    
+                                            {%- render "pagination" with paginate as paginate -%}
+                                       
+    {%- endif -%}
+	 
+ </div>
+  
+  
+</div>
+
+    
+{%- endpaginate -%}
+
+
+            {%- if search.performed -%}
+              {%- if search.results_count < 5000 -%}
+
+  <div style="margin-top:25px; margin-left:10px; margin-right:10px">
+        <center>
+            <b><i style="font-size:20px;">More cake designs from the web</i></b>
+            <p><i style="font-size:13px;">Click on any cake design you like to get a price quote.</i></p>
+        </center>
+
+        <div id="google-search-container">
+            <div class="gcse-searchresults-only" data-disableWebSearch="true"></div>
+        </div>
+
+        <center>
+            <p style="margin-top:10px">Take a screenshot of cake design you like :)</p>
+            <div style="width: 350px; margin-top:-10px; margin-bottom:20px">
+                <a id="logo" href="https://m.me/cakesandmemoriescebu?loadIn=defaultBrowser" role="banner">
+                    <!-- Replace with your actual image -->
+                    <img src="path/to/your/FB-Send-to-Messenger-Button2.jpg" alt="Facebook Messenger">
+                </a>
+            </div>
+        </center>
+    </div>
+
+
+            	 {%- endif -%}
+ 			 {%- endif -%}
+ 
+       
+ <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <script>
+        const SUPABASE_URL = 'https://congofivupobtfudnhni.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNvbmdvZml2dXBvYnRmdWRuaG5pIiwicm9sZSI6ImFub24iLCJpYXQiOjE2ODc1NjkyMTQsImV4cCI6MjAwMzE0NTIxNH0.y2jsrPWt7Q_016e1o8PkM-Ayyti9yzxj3jH9hvH4DiM';
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        let loadingMessage = null;
+
+        async function saveUrlAndRedirect(imageUrl) {
+            console.log('saveUrlAndRedirect called with:', imageUrl);
+            
+            // Remove any existing loading message
+            if (loadingMessage && loadingMessage.parentNode) {
+                loadingMessage.parentNode.removeChild(loadingMessage);
+            }
+
+            loadingMessage = document.createElement('div');
+            loadingMessage.textContent = 'Saving your choice, please wait...';
+            loadingMessage.style.cssText = 'position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: #28a745; color: white; padding: 10px 20px; border-radius: 5px; z-index: 10000; box-shadow: 0 2px 10px rgba(0,0,0,0.3);';
+            document.body.appendChild(loadingMessage);
+
+            try {
+                console.log('Adding new row to uploadpricing2 table...');
+                console.log('Image URL being saved:', imageUrl);
+                
+                // Try different approaches for the insert
+                let insertData, insertError;
+                
+                // First attempt: with rowid selection
+                const result1 = await supabaseClient
+                    .from('uploadpricing2')
+                    .insert([{ image: imageUrl }])
+                    .select('rowid')
+                    .single();
+                
+                insertData = result1.data;
+                insertError = result1.error;
+                
+                // If rowid doesn't exist, try with 'id'
+                if (insertError && insertError.message.includes('rowid')) {
+                    console.log('Trying with id instead of rowid...');
+                    const result2 = await supabaseClient
+                        .from('uploadpricing2')
+                        .insert([{ image: imageUrl }])
+                        .select('id')
+                        .single();
+                    
+                    insertData = result2.data;
+                    insertError = result2.error;
+                    
+                    // Use id instead of rowid if successful
+                    if (!insertError && insertData) {
+                        insertData.rowid = insertData.id;
+                    }
+                }
+                
+                // If still failing, try without select to just insert
+                if (insertError) {
+                    console.log('Trying basic insert without select...');
+                    const result3 = await supabaseClient
+                        .from('uploadpricing2')
+                        .insert([{ image: imageUrl }]);
+                    
+                    if (!result3.error) {
+    // Success but no ID returned, redirect without ID
+    console.log('Insert successful but no ID returned');
+    window.location.href = `/pages/cake-price-calculator?from_search=1`;
+    return;
+} else {
+                        insertError = result3.error;
+                    }
+                }
+
+                // Log detailed error information
+                if (insertError) {
+                    console.error('Supabase Error Details:');
+                    console.error('- Code:', insertError.code);
+                    console.error('- Message:', insertError.message);
+                    console.error('- Details:', insertError.details);
+                    console.error('- Hint:', insertError.hint);
+                    throw insertError;
+                }
+
+                if (insertData) {
+    const newRowId = insertData.rowid || insertData.id;
+    console.log(`Row created with ID: ${newRowId}. Redirecting...`);
+    window.location.href = `/pages/cake-price-calculator?rowid=${newRowId}&from_search=1`;
+} else {
+    throw new Error('No data returned from insert operation');
+}
+            } catch (error) {
+                console.error('Full error object:', error);
+                if (loadingMessage && loadingMessage.parentNode) {
+                    loadingMessage.parentNode.removeChild(loadingMessage);
+                }
+                
+                // More specific error messages
+                let errorMessage = 'Sorry, there was a problem saving your choice. ';
+                if (error.message.includes('permission')) {
+                    errorMessage += 'Database permission error.';
+                } else if (error.message.includes('column')) {
+                    errorMessage += 'Database structure error.';
+                } else if (error.message.includes('network') || error.message.includes('fetch')) {
+                    errorMessage += 'Network connection error.';
+                } else {
+                    errorMessage += `Error: ${error.message}`;
+                }
+                
+                alert(errorMessage + ' Please check the console for details.');
+            }
+        }
+
+    
+function handleGoogleSearchClick(event) {
+    console.log('Click detected on:', event.target);
+    console.log('Element classes:', event.target.className);
+    console.log('Parent element:', event.target.parentElement);
+    
+    let clickedElement = event.target;
+    let imageUrl = null;
+
+    // Check if click is within Google search results
+    const searchContainer = document.getElementById('google-search-container');
+    if (!searchContainer || !searchContainer.contains(clickedElement)) {
+        return; // Not within our search container
+    }
+
+    // Reject obvious non-image clicks first
+    const rejectedSelectors = [
+        '.gsc-cursor',
+        '.gsc-cursor-page', 
+        '.gsc-cursor-current-page',
+        '.gsc-cursor-numbered-page',
+        '.gsc-above-wrapper-area',
+        '.gsc-input',
+        '.gsc-search-button'
+    ];
+
+    for (const selector of rejectedSelectors) {
+        if (clickedElement.closest(selector)) {
+            console.log('Rejected pagination/UI click:', selector);
+            return;
+        }
+    }
+
+    // Simple approach: Look for ANY image in the clicked area
+    let img = null;
+    
+    // Strategy 1: Clicked element is an image
+    if (clickedElement.tagName === 'IMG') {
+        img = clickedElement;
+        console.log('Direct image click');
+    }
+    
+    // Strategy 2: Look for image within clicked element
+    if (!img) {
+        img = clickedElement.querySelector('img');
+        if (img) console.log('Found image within clicked element');
+    }
+    
+    // Strategy 3: Look in parent elements for image
+    if (!img) {
+        let parent = clickedElement.parentElement;
+        for (let i = 0; i < 3 && parent; i++) {
+            img = parent.querySelector('img');
+            if (img) {
+                console.log('Found image in parent element level', i + 1);
+                break;
+            }
+            parent = parent.parentElement;
+        }
+    }
+
+    // If we found an image, use it
+    if (img && img.src) {
+        imageUrl = img.src;
+        console.log('Found image URL:', imageUrl);
+        
+        // Basic validation - make sure it looks like an image
+        if (imageUrl.startsWith('http') && 
+            (imageUrl.includes('googleusercontent') || 
+             imageUrl.includes('ggpht') || 
+             imageUrl.includes('images?') ||
+             imageUrl.match(/\.(jpg|jpeg|png|gif|webp)/i))) {
+            
+            console.log('Valid image URL, processing...');
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            saveUrlAndRedirect(imageUrl);
+            return false;
+        } else {
+            console.log('Invalid image URL, ignoring');
+        }
+    } else {
+        console.log('No image found in clicked area');
+    }
+}
+
+
+        // Enhanced initialization function
+        function initializeGoogleSearchIntegration() {
+            console.log('Initializing Google Search integration...');
+
+            // Remove any existing listeners to prevent duplicates
+            document.removeEventListener('click', handleGoogleSearchClick, true);
+            
+            // Add global click listener with capture phase
+            document.addEventListener('click', handleGoogleSearchClick, true);
+            
+            // Also add in bubble phase as backup
+            document.addEventListener('click', handleGoogleSearchClick, false);
+
+            console.log('Click listeners attached to document');
+        }
+
+        // Enhanced mutation observer
+        function setupMutationObserver() {
+            const targetNode = document.getElementById('google-search-container');
+            if (!targetNode) {
+                console.log('Google search container not found, retrying in 1 second...');
+                setTimeout(setupMutationObserver, 1000);
+                return;
+            }
+
+            const observer = new MutationObserver((mutations) => {
+                console.log('DOM mutations detected in search container');
+                mutations.forEach((mutation) => {
+                    if (mutation.addedNodes.length > 0) {
+                        // Log what was added
+                        mutation.addedNodes.forEach((node) => {
+                            if (node.nodeType === Node.ELEMENT_NODE) {
+                                console.log('New element added:', node.tagName, node.className);
+                                
+                                // Check if Google search results were added
+                                if (node.classList?.contains('gsc-results') || 
+                                    node.querySelector?.('.gsc-imageResult') ||
+                                    node.classList?.contains('gs-image-box')) {
+                                    console.log('Google search results detected!');
+                                }
+                            }
+                        });
+                    }
+                });
+            });
+
+            observer.observe(targetNode, { 
+                childList: true, 
+                subtree: true,
+                attributes: true,
+                attributeFilter: ['class', 'src']
+            });
+
+            console.log('MutationObserver setup complete');
+        }
+
+        // Wait for Google CSE to load and initialize
+        function waitForGoogleCSE() {
+            if (typeof google !== 'undefined' && google.search) {
+                console.log('Google CSE API detected');
+                // Add a small delay to ensure elements are rendered
+                setTimeout(initializeGoogleSearchIntegration, 500);
+            } else {
+                console.log('Waiting for Google CSE to load...');
+                setTimeout(waitForGoogleCSE, 500);
+            }
+        }
+
+        // Initialize everything when DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', function() {
+                console.log('DOM loaded, setting up integration...');
+                setupMutationObserver();
+                initializeGoogleSearchIntegration();
+                waitForGoogleCSE();
+            });
+        } else {
+            console.log('DOM already loaded, setting up integration...');
+            setupMutationObserver();
+            initializeGoogleSearchIntegration();
+            waitForGoogleCSE();
+        }
+
+        // Additional backup initialization on window load
+        window.addEventListener('load', function() {
+            console.log('Window loaded, reinitializing...');
+            setTimeout(initializeGoogleSearchIntegration, 1000);
+        });
+
+        // Debug function to test if elements exist
+        window.debugGoogleSearch = function() {
+            const container = document.getElementById('google-search-container');
+            console.log('Search container:', container);
+            
+            if (container) {
+                const images = container.querySelectorAll('img');
+                const links = container.querySelectorAll('a');
+                console.log(`Found ${images.length} images and ${links.length} links`);
+                
+                images.forEach((img, index) => {
+                    console.log(`Image ${index + 1}:`, img.src, img.parentElement);
+                });
+            }
+        };
+    </script>
+
+    <!-- Load Google CSE script last -->
+    <script async src="https://cse.google.com/cse.js?cx=670b0637b2c724fe9"></script>

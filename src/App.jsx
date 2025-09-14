@@ -25,7 +25,8 @@ function dataUrlToBlob(dataUrl) {
 export default function App() {
   // Search & UI State
   const [isUploadOpen, setIsUploadOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(''); // This will store the actual search term to execute
+  const [searchInput, setSearchInput] = useState(''); // This will store what user types
   const [showResults, setShowResults] = useState(false);
   const [isCSELoaded, setIsCSELoaded] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
@@ -470,7 +471,141 @@ export default function App() {
       };
   }, []);
 
-  // --- Google CSE Handlers & Effects ---
+  // --- Google Search Image Click Handler ---
+  const handleGoogleSearchImageClick = useCallback(async (imageUrl) => {
+    console.log('Processing image click:', imageUrl);
+    
+    try {
+      setProcessingState('uploading');
+      setProcessingMessage('Saving your choice...');
+      
+      // Save image URL to Supabase database
+      const dbRecord = await saveImageToDatabase(imageUrl, 'selected_from_search');
+      console.log('Image saved to database:', dbRecord);
+      
+      // Create a mock image object for the gallery
+      const selectedImage = {
+        id: dbRecord.id || Date.now() + Math.random(),
+        dataUrl: imageUrl,
+        file: null, // No actual file since it's from web
+        publicUrl: imageUrl,
+        dbRecord,
+        fromSearch: true
+      };
+      
+      // Update gallery and close search results
+      setGallery([selectedImage]);
+      setSelectedImageIndex(0);
+      setShowResults(false);
+      setProcessingState('idle');
+      setProcessingMessage('');
+      
+      console.log('Image selection complete, ready for pricing');
+      
+    } catch (error) {
+      console.error('Failed to save selected image:', error);
+      setError(`Failed to save selected image: ${error.message}`);
+      setProcessingState('error');
+      setProcessingMessage('Failed to save image');
+      
+      // Clear error state after 5 seconds
+      setTimeout(() => {
+        setProcessingState('idle');
+        setProcessingMessage('');
+        setError(null);
+      }, 5000);
+    }
+  }, []);
+  
+  // Initialize Google Search Integration
+  useEffect(() => {
+    const handleGoogleSearchClick = (event) => {
+      const clickedElement = event.target;
+      const searchContainer = document.getElementById('google-search-container');
+      
+      // Check if click is within Google search results
+      if (!searchContainer || !searchContainer.contains(clickedElement)) {
+        return;
+      }
+      
+      // Reject pagination and UI elements
+      const rejectedSelectors = [
+        '.gsc-cursor',
+        '.gsc-cursor-page',
+        '.gsc-cursor-current-page', 
+        '.gsc-cursor-numbered-page',
+        '.gsc-above-wrapper-area',
+        '.gsc-input',
+        '.gsc-search-button'
+      ];
+      
+      for (const selector of rejectedSelectors) {
+        if (clickedElement.closest(selector)) {
+          console.log('Rejected pagination/UI click:', selector);
+          return;
+        }
+      }
+      
+      // Look for image in clicked area
+      let img = null;
+      
+      // Strategy 1: Direct image click
+      if (clickedElement.tagName === 'IMG') {
+        img = clickedElement;
+      }
+      
+      // Strategy 2: Image within clicked element
+      if (!img) {
+        img = clickedElement.querySelector('img');
+      }
+      
+      // Strategy 3: Image in parent elements
+      if (!img) {
+        let parent = clickedElement.parentElement;
+        for (let i = 0; i < 3 && parent; i++) {
+          img = parent.querySelector('img');
+          if (img) break;
+          parent = parent.parentElement;
+        }
+      }
+      
+      // Process valid image URLs
+      if (img && img.src) {
+        const imageUrl = img.src;
+        console.log('Found image URL:', imageUrl);
+        
+        // Validate image URL
+        if (imageUrl.startsWith('http') && 
+            (imageUrl.includes('googleusercontent') || 
+             imageUrl.includes('ggpht') || 
+             imageUrl.includes('images?') ||
+             imageUrl.match(/\.(jpg|jpeg|png|gif|webp)/i))) {
+          
+          console.log('Valid image URL, processing...');
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          handleGoogleSearchImageClick(imageUrl);
+          return false;
+        }
+      }
+    };
+    
+    // Setup click listeners when search results are shown
+    if (showResults) {
+      console.log('Setting up Google search click handlers');
+      
+      // Remove existing listeners
+      document.removeEventListener('click', handleGoogleSearchClick, true);
+      
+      // Add click listeners with capture phase
+      document.addEventListener('click', handleGoogleSearchClick, true);
+      
+      // Cleanup function
+      return () => {
+        document.removeEventListener('click', handleGoogleSearchClick, true);
+      };
+    }
+  }, [showResults, handleGoogleSearchImageClick]);
   const executeCseSearch = useCallback((query) => {
     if (!query || !query.trim()) {
       console.log('No query provided, skipping search');
@@ -512,6 +647,15 @@ export default function App() {
             setIsSearching(false);
           }
         }, 1000);
+        
+        // Fallback: Force stop loading after 5 seconds if stuck
+        setTimeout(() => {
+          if (!searchAbortController.current.signal.aborted) {
+            console.log('Search timeout - forcing stop loading state');
+            setIsSearching(false);
+            setIsCSELoaded(true);
+          }
+        }, 5000);
       } else {
         console.error('CSE element or execute method not available');
         setIsSearching(false);
@@ -526,15 +670,18 @@ export default function App() {
   
 
   const handleSearch = () => { 
-    if (searchQuery.trim()) {
-      setIsCSELoaded(false); // Reset loading state
-      
+    if (searchInput.trim()) {
       // Clear the search container
       const container = document.getElementById('google-search-container');
       if (container) {
         container.innerHTML = '';
       }
       
+      // Reset pendingSearchQuery to allow re-searching same terms
+      pendingSearchQuery.current = null;
+      
+      // Set the actual search query to trigger the search
+      setSearchQuery(searchInput.trim());
       setShowResults(true); // This will trigger useEffect to handle the search
     }
   };
@@ -564,6 +711,11 @@ export default function App() {
   useEffect(() => {
     if (!showResults) return;
     
+    // Initialize searchInput with current searchQuery when showing results
+    if (searchQuery && searchInput !== searchQuery) {
+      setSearchInput(searchQuery);
+    }
+    
     // Prevent double execution
     if (isSearching) {
       console.log('Already searching, skipping...');
@@ -588,6 +740,7 @@ export default function App() {
     const timeoutId = setTimeout(() => {
       if (document.getElementById('google-cse-script')) {
         console.log('CSE script already loaded, executing search');
+        setIsCSELoaded(true); // Ensure CSE loaded state is true
         executeCseSearch(searchQuery);
         return;
       }
@@ -723,8 +876,8 @@ export default function App() {
                         <div className="flex items-center">
                           <input 
                             type="text" 
-                            value={searchQuery} 
-                            onChange={(e) => setSearchQuery(e.target.value)} 
+                            value={searchInput} 
+                            onChange={(e) => setSearchInput(e.target.value)} 
                             onKeyDown={handleKeyDown} 
                             placeholder="Search for cake designs..." 
                             className="flex-grow px-4 py-4 text-base outline-none rounded-xl bg-transparent" 
@@ -759,8 +912,8 @@ export default function App() {
                     <div className="hidden md:flex bg-white rounded-full shadow-xl p-1 sm:p-2 items-center border border-gray-200 hover:shadow-2xl transition-shadow duration-300">
                         <input 
                           type="text" 
-                          value={searchQuery} 
-                          onChange={(e) => setSearchQuery(e.target.value)} 
+                          value={searchInput} 
+                          onChange={(e) => setSearchInput(e.target.value)} 
                           onKeyDown={handleKeyDown} 
                           placeholder="Search for cake designs..." 
                           className="flex-grow px-4 sm:px-6 py-3 sm:py-4 text-base sm:text-lg outline-none rounded-full bg-transparent" 
@@ -926,8 +1079,8 @@ export default function App() {
                   <div className="flex items-center">
                     <input 
                       type="text" 
-                      value={searchQuery} 
-                      onChange={(e) => setSearchQuery(e.target.value)} 
+                      value={searchInput} 
+                      onChange={(e) => setSearchInput(e.target.value)} 
                       onKeyDown={handleKeyDown} 
                       placeholder="Search for cake designs..." 
                       className="flex-grow px-3 py-3 text-base outline-none rounded-xl bg-transparent" 
@@ -958,8 +1111,8 @@ export default function App() {
                 <div className="hidden md:flex bg-white rounded-full shadow-xl p-1 sm:p-2 items-center border border-gray-200 hover:shadow-2xl transition-shadow duration-300">
                     <input 
                       type="text" 
-                      value={searchQuery} 
-                      onChange={(e) => setSearchQuery(e.target.value)} 
+                      value={searchInput} 
+                      onChange={(e) => setSearchInput(e.target.value)} 
                       onKeyDown={handleKeyDown} 
                       placeholder="Search for cake designs..." 
                       className="flex-grow px-4 sm:px-6 py-3 sm:py-4 text-base sm:text-lg outline-none rounded-full bg-transparent" 
@@ -998,10 +1151,10 @@ export default function App() {
                 </div>
                 
                 <div id="google-search-container" className="min-h-[300px] sm:min-h-[400px]"></div>
-                {(!isCSELoaded || isSearching) && (
+                {isSearching && (
                   <div className="text-center py-8 text-gray-500">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-pink-500 mx-auto mb-4"></div>
-                    <p className="text-sm sm:text-base">{isSearching ? 'Searching...' : 'Loading search results...'}</p>
+                    <p className="text-sm sm:text-base">Searching...</p>
                   </div>
                 )}
               </div>
